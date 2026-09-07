@@ -1,0 +1,10 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+const compiled=await build({entryPoints:['lib/trips/schema.ts'],bundle:true,write:false,format:'esm',platform:'node'});
+const {intakeSchema,itinerarySchema,tripSchema}=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text).toString('base64'));
+const input={destination:'Kyoto',startDate:'',days:3,travelers:2,budget:'Comfort',pace:'Balanced',interests:['Nature'],needs:'Vegetarian',homeCity:'Bengaluru'};
+test('valid flexible-date preference request is accepted',()=>assert.ok(intakeSchema.safeParse(input).success));
+test('bounds reject abusive or invalid trip requests',()=>{for(const changes of [{days:100},{days:0},{days:1.5},{travelers:-1},{destination:''},{needs:'x'.repeat(601)},{budget:'unlimited'},{startDate:'tomorrow'}])assert.equal(intakeSchema.safeParse({...input,...changes}).success,false)});
+test('provider responses must have usable bounded itinerary structure',()=>{assert.equal(itinerarySchema.safeParse({title:'Trip',summary:'Fine',days:[],tips:[]}).success,false);assert.equal(itinerarySchema.safeParse({title:'Trip',summary:'Fine',days:[{title:'Day',activities:[{time:'AM',title:'Walk',description:'Explore',place:'Kyoto'}]}],tips:[]}).success,true)});
+test('saved records require unambiguous IDs and explicit provenance',()=>assert.equal(tripSchema.safeParse({id:'not-a-uuid',intake:input,source:'verified'}).success,false));

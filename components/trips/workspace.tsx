@@ -1,0 +1,899 @@
+"use client";
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import {
+  Sparkles,
+  MapPin,
+  ArrowRight,
+  Leaf,
+  Utensils,
+  Landmark,
+  Mountain,
+  Camera,
+  Sun,
+  Check,
+  ShieldCheck,
+  SlidersHorizontal,
+  Heart,
+  LoaderCircle,
+  Bookmark,
+  Download,
+  ArrowLeft,
+  Map,
+  Trash2,
+  Pencil,
+} from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from "@/components/ui/alert-dialog";
+import { Toaster } from "@/components/ui/sonner";
+import { toast } from "sonner";
+import { destinations, sampleTrip } from "@/lib/trips/sample";
+import type { Trip, Intake } from "@/lib/trips/schema";
+const interests = [
+  { name: "Nature", icon: Leaf },
+  { name: "Food", icon: Utensils },
+  { name: "Culture", icon: Landmark },
+  { name: "Adventure", icon: Mountain },
+  { name: "Photography", icon: Camera },
+  { name: "Relaxation", icon: Sun },
+];
+const initial: Intake = {
+  destination: "",
+  startDate: "",
+  days: 5,
+  travelers: 2,
+  budget: "Comfort",
+  pace: "Balanced",
+  interests: ["Nature", "Food"],
+  needs: "",
+  homeCity: "",
+};
+async function api(url: string, options?: RequestInit) {
+  const r = await fetch(url, options);
+  const data = await r.json();
+  if (!r.ok)
+    throw new Error(data.error ?? "Something went wrong. Please try again.");
+  return data;
+}
+function Choice({
+  label,
+  value,
+  values,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  values: string[];
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label className="field">
+      {label}
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger aria-label={label}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {values.map((v) => (
+            <SelectItem value={v} key={v}>
+              {v}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </label>
+  );
+}
+export function Workspace({
+  view = "plan",
+  aiReady = false,
+}: {
+  view?: "plan" | "trips" | "explore" | "pricing";
+  aiReady?: boolean;
+}) {
+  const [form, setForm] = useState<Intake>(initial);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [trip, setTrip] = useState<Trip | null>(null);
+  const [saved, setSaved] = useState<Trip[]>([]);
+  const [loading, setLoading] = useState(view === "trips");
+  const [extra, setExtra] = useState(false);
+  const [legal, setLegal] = useState<string | null>(null);
+  const [edit, setEdit] = useState<{
+    day: number;
+    activity: number;
+    title: string;
+    description: string;
+  } | null>(null);
+  const [joined, setJoined] = useState(false);
+  function update<K extends keyof Intake>(key: K, value: Intake[K]) {
+    setForm((f) => ({ ...f, [key]: value }));
+  }
+  async function load() {
+    setLoading(true);
+    try {
+      setSaved((await api("/api/trips")).trips);
+      setError("");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => {
+    if (view === "trips") void load();
+    if (view === "plan") {
+      const query = new URLSearchParams(window.location.search);
+      if (query.get("destination"))
+        setForm((f) => ({
+          ...f,
+          destination: query.get("destination")!.slice(0, 120),
+        }));
+    }
+  }, [view]);
+  async function generate(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const d = await api("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      setTrip(d.trip);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function save() {
+    if (!trip) return;
+    setBusy(true);
+    try {
+      await api("/api/trips", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(trip),
+      });
+      toast.success("Trip saved to My trips");
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function remove(id: string) {
+    try {
+      await api("/api/trips", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      setSaved((s) => s.filter((t) => t.id !== id));
+      toast.success("Trip deleted");
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  }
+  function sample() {
+    setTrip({
+      ...structuredClone(sampleTrip),
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+    });
+    setError("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  const cards = (
+    <div className="destination-grid">
+      {destinations.map((d) => (
+        <Link
+          href={`/?destination=${encodeURIComponent(d.name + ", " + d.country)}`}
+          className="destination-card"
+          key={d.name}
+        >
+          <img src={d.image} alt={`${d.name}, ${d.country}`} loading="lazy" />
+          <span className="dest-badge">{d.tag}</span>
+          <div className="dest-copy">
+            <h3>
+              {d.name}
+              <span style={{ fontSize: 12, fontWeight: 400, marginLeft: 7 }}>
+                {d.country}
+              </span>
+            </h3>
+            <p>{d.detail}</p>
+          </div>
+        </Link>
+      ))}
+    </div>
+  );
+  return (
+    <main className="workspace">
+      <Toaster richColors />
+      {trip ? (
+        <>
+          <button
+            className="text-button"
+            onClick={() => {
+              setTrip(null);
+              if (view === "trips") void load();
+            }}
+          >
+            <ArrowLeft size={15} />
+            Back to {view === "trips" ? "my trips" : "planning"}
+          </button>
+          <div style={{ marginTop: 24 }}>
+            <span className="eyebrow">
+              {trip.source === "sample"
+                ? "Example itinerary"
+                : "Your personal itinerary"}{" "}
+              · {trip.intake.days} days
+            </span>
+            <h1 className="trip-title">{trip.itinerary.title}</h1>
+            <p className="subtext">{trip.itinerary.summary}</p>
+            <div className="trip-actions">
+              <button className="primary" disabled={busy} onClick={save}>
+                <Bookmark size={16} />
+                Save trip
+              </button>
+              <button
+                className="secondary-button"
+                onClick={() => window.print()}
+              >
+                <Download size={16} />
+                Print / Save PDF
+              </button>
+              <span className="secondary-button">
+                {trip.intake.destination} · {trip.intake.travelers} travelers
+              </span>
+            </div>
+          </div>
+          <div className="planner-layout">
+            <div className="trip-days">
+              {trip.itinerary.days.map((day, i) => (
+                <section className="day-card" key={i}>
+                  <div className="day-header">
+                    <span className="day-number">
+                      DAY {String(i + 1).padStart(2, "0")}
+                    </span>
+                    <h2 style={{ fontSize: 18, fontWeight: 600 }}>
+                      {day.title}
+                    </h2>
+                  </div>
+                  {day.activities.map((a, j) => (
+                    <div className="activity" key={j}>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                        }}
+                      >
+                        <small>{a.time}</small>
+                        <button
+                          aria-label={`Edit ${a.title}`}
+                          onClick={() =>
+                            setEdit({
+                              day: i,
+                              activity: j,
+                              title: a.title,
+                              description: a.description,
+                            })
+                          }
+                        >
+                          <Pencil size={14} />
+                        </button>
+                      </div>
+                      <h3>{a.title}</h3>
+                      <p>{a.description}</p>
+                      <a
+                        className="text-button"
+                        style={{ marginTop: 8 }}
+                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a.place)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <MapPin size={13} />
+                        Find on map
+                      </a>
+                    </div>
+                  ))}
+                </section>
+              ))}
+            </div>
+            <aside className="panel">
+              <h2 className="aside-title">Before you go</h2>
+              {trip.itinerary.tips.map((t, i) => (
+                <p className="subtext" style={{ marginBottom: 16 }} key={i}>
+                  {t}
+                </p>
+              ))}
+              <div className="small-tip">
+                <strong>Make it yours</strong>Use the pencil beside an activity
+                to adjust your plan. Save again to keep your changes.
+              </div>
+            </aside>
+          </div>
+        </>
+      ) : view === "plan" ? (
+        <>
+          <div className="page-heading">
+            <div>
+              <h1>Where to next?</h1>
+              <p className="subtext">
+                Big adventures. Little escapes. Let’s make it your kind of trip.
+              </p>
+            </div>
+            <span className="eyebrow">A WORLD OF POSSIBILITIES</span>
+          </div>
+          <section className="hero">
+            <img
+              src="/images/dolomites.jpg"
+              alt="The dramatic peaks of the Italian Dolomites"
+            />
+            <div className="hero-copy">
+              <span className="eyebrow">GO SOMEWHERE THAT STAYS WITH YOU</span>
+              <h2>
+                A trip that feels
+                <br />
+                like you.
+              </h2>
+              <p>Your interests. Your pace. Your own way to explore.</p>
+            </div>
+            <span className="hero-location">
+              <MapPin size={12} />
+              The Dolomites, Italy
+            </span>
+          </section>
+          <div className="planner-layout">
+            <section className="panel">
+              <h2 className="panel-heading">
+                <span className="icon-box">
+                  <Sparkles size={18} />
+                </span>
+                Let’s plan something good
+              </h2>
+              <p className="subtext">
+                A few details, a world of possibilities.
+              </p>
+              <form onSubmit={generate}>
+                <div className="form-grid">
+                  <label className="field wide">
+                    Where would you like to go?
+                    <span className="input-icon">
+                      <MapPin />
+                      <input
+                        required
+                        minLength={2}
+                        maxLength={120}
+                        placeholder="A city, a country, or somewhere on your mind"
+                        value={form.destination}
+                        onChange={(e) => update("destination", e.target.value)}
+                      />
+                    </span>
+                  </label>
+                  <label className="field">
+                    When are you going?
+                    <input
+                      aria-label="Departure date"
+                      type="date"
+                      value={form.startDate}
+                      onChange={(e) => update("startDate", e.target.value)}
+                    />
+                  </label>
+                  <Choice
+                    label="How long?"
+                    value={`${form.days} days`}
+                    values={Array.from(
+                      { length: 10 },
+                      (_, i) => `${i + 1} days`,
+                    )}
+                    onChange={(v) => update("days", parseInt(v))}
+                  />
+                  <Choice
+                    label="Who's coming?"
+                    value={`${form.travelers} ${form.travelers === 1 ? "traveler" : "travelers"}`}
+                    values={Array.from(
+                      { length: 10 },
+                      (_, i) =>
+                        `${i + 1} ${i === 0 ? "traveler" : "travelers"}`,
+                    )}
+                    onChange={(v) => update("travelers", parseInt(v))}
+                  />
+                  <Choice
+                    label="Your travel budget"
+                    value={form.budget}
+                    values={["Budget", "Comfort", "Luxury"]}
+                    onChange={(v) => update("budget", v as Intake["budget"])}
+                  />
+                  <div className="field wide">
+                    What do you love?
+                    <div className="interests">
+                      {interests.map((x) => (
+                        <button
+                          type="button"
+                          key={x.name}
+                          aria-pressed={form.interests.includes(x.name)}
+                          className={`interest ${form.interests.includes(x.name) ? "chosen" : ""}`}
+                          onClick={() =>
+                            update(
+                              "interests",
+                              form.interests.includes(x.name)
+                                ? form.interests.filter((y) => y !== x.name)
+                                : [...form.interests, x.name],
+                            )
+                          }
+                        >
+                          <x.icon size={13} />
+                          {x.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="text-button"
+                  style={{ marginTop: 19 }}
+                  onClick={() => setExtra(!extra)}
+                  aria-expanded={extra}
+                >
+                  <SlidersHorizontal size={14} />
+                  {extra ? "Hide preferences" : "A little more about your trip"}
+                  <span style={{ color: "#9ba39d", marginLeft: 4 }}>
+                    Optional
+                  </span>
+                </button>
+                {extra && (
+                  <div className="form-grid">
+                    <Choice
+                      label="Your pace"
+                      value={form.pace}
+                      values={["Relaxed", "Balanced", "Packed"]}
+                      onChange={(v) => update("pace", v as Intake["pace"])}
+                    />
+                    <label className="field">
+                      Home city
+                      <input
+                        maxLength={100}
+                        placeholder="Where you're traveling from"
+                        value={form.homeCity}
+                        onChange={(e) => update("homeCity", e.target.value)}
+                      />
+                    </label>
+                    <label className="field wide">
+                      Dietary, accessibility & family needs
+                      <textarea
+                        maxLength={600}
+                        placeholder="For example: vegetarian, step-free routes, traveling with a 6-year-old…"
+                        value={form.needs}
+                        onChange={(e) => update("needs", e.target.value)}
+                      />
+                    </label>
+                  </div>
+                )}
+                {error && (
+                  <div role="alert" className="error">
+                    {error}
+                  </div>
+                )}
+                <button className="primary generate" disabled={busy}>
+                  {busy ? (
+                    <LoaderCircle className="loading-spin" size={17} />
+                  ) : (
+                    <Sparkles size={17} />
+                  )}{" "}
+                  {busy ? "Putting your trip together…" : "Create my itinerary"}
+                  {!busy && (
+                    <ArrowRight size={16} style={{ marginLeft: "auto" }} />
+                  )}
+                </button>
+                <p className="form-note">
+                  {aiReady
+                    ? "Personalized around you. Up to 5 plans per day."
+                    : "Early access · Personalized AI planning opens soon."}
+                </p>
+              </form>
+            </section>
+            <aside className="planner-aside">
+              <div className="panel">
+                <h2 className="aside-title">Not just a trip. Your trip.</h2>
+                <div className="benefit">
+                  <Heart />
+                  <div>
+                    <strong>Built around you</strong>Your interests, your
+                    budget, your travel style.
+                  </div>
+                </div>
+                <div className="benefit">
+                  <Map />
+                  <div>
+                    <strong>A day-by-day game plan</strong>Thoughtful days, with
+                    room for the unexpected.
+                  </div>
+                </div>
+                <div className="benefit">
+                  <SlidersHorizontal />
+                  <div>
+                    <strong>Room to make it yours</strong>Change the details.
+                    Keep the adventure.
+                  </div>
+                </div>
+                <div className="quote-box">
+                  “The best part of a trip?
+                  <br />
+                  Making it your own.”
+                </div>
+              </div>
+              <div className="small-tip">
+                <strong>
+                  <Sparkles
+                    size={14}
+                    style={{ display: "inline", marginRight: 5 }}
+                  />
+                  A little inspiration goes a long way
+                </strong>
+                Take a look at a three-day Kyoto example.
+                <button
+                  className="text-button"
+                  style={{ marginTop: 12 }}
+                  onClick={sample}
+                >
+                  Explore the sample itinerary <ArrowRight size={13} />
+                </button>
+              </div>
+            </aside>
+          </div>
+          <div className="section-heading">
+            <h2>A little inspiration</h2>
+            <Link href="/explore" className="text-button">
+              Explore destinations <ArrowRight size={13} />
+            </Link>
+          </div>
+          {cards}
+          <button
+            className="text-button"
+            style={{ marginTop: 18 }}
+            onClick={sample}
+          >
+            Or explore a sample itinerary <ArrowRight size={13} />
+          </button>
+        </>
+      ) : view === "trips" ? (
+        <>
+          <div className="page-heading">
+            <div>
+              <h1>Your trips, all together.</h1>
+              <p className="subtext">
+                A home for the adventures you’re dreaming of.
+              </p>
+            </div>
+            <Link href="/" className="primary">
+              <Sparkles size={15} />
+              New trip
+            </Link>
+          </div>
+          {error && (
+            <div className="error" role="alert">
+              {error}
+              <button
+                onClick={load}
+                style={{ marginLeft: 10, textDecoration: "underline" }}
+              >
+                Try again
+              </button>
+            </div>
+          )}
+          {loading ? (
+            <p role="status">Loading your trips…</p>
+          ) : !saved.length ? (
+            <div className="empty-state">
+              <Map size={40} />
+              <h2>Your next chapter is unwritten.</h2>
+              <p className="subtext">
+                Create an itinerary and save it here for later.
+              </p>
+              <Link
+                href="/"
+                className="primary"
+                style={{ width: "fit-content" }}
+              >
+                Plan my first trip <ArrowRight size={15} />
+              </Link>
+              <button
+                className="text-button"
+                style={{ margin: "auto" }}
+                onClick={sample}
+              >
+                Start with the Kyoto example
+              </button>
+            </div>
+          ) : (
+            <div className="plan-grid">
+              {saved.map((t) => (
+                <article className="panel" key={t.id}>
+                  <span className="eyebrow">
+                    {t.intake.days} days ·{" "}
+                    {t.source === "sample" ? "Example" : "Personal itinerary"}
+                  </span>
+                  <h2
+                    style={{
+                      fontFamily: "Georgia",
+                      fontSize: 25,
+                      margin: "12px 0",
+                    }}
+                  >
+                    {t.itinerary.title}
+                  </h2>
+                  <p className="subtext">{t.intake.destination}</p>
+                  <div className="trip-actions">
+                    <button className="primary" onClick={() => setTrip(t)}>
+                      Open itinerary <ArrowRight size={15} />
+                    </button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <button
+                          className="secondary-button"
+                          aria-label={`Delete ${t.itinerary.title}`}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogTitle>Delete this trip?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This removes the saved itinerary from your account.
+                          This cannot be undone.
+                        </AlertDialogDescription>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Keep trip</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => remove(t.id)}>
+                            Delete trip
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </>
+      ) : view === "explore" ? (
+        <>
+          <div className="page-heading">
+            <div>
+              <h1>Follow your curiosity.</h1>
+              <p className="subtext">
+                A few places to get your next chapter started.
+              </p>
+            </div>
+          </div>
+          {cards}
+          <section className="panel" style={{ marginTop: 25 }}>
+            <span className="eyebrow">A CLOSER LOOK</span>
+            <h2 className="trip-title">Three days, a little Kyoto.</h2>
+            <p className="subtext">
+              Temple gardens, old streets, and the freedom to take it slow.
+              Explore an example of your day-by-day itinerary.
+            </p>
+            <button
+              className="primary"
+              style={{ marginTop: 20 }}
+              onClick={sample}
+            >
+              Open sample itinerary <ArrowRight size={16} />
+            </button>
+          </section>
+        </>
+      ) : (
+        <>
+          <div className="page-heading">
+            <div>
+              <h1>More room to roam.</h1>
+              <p className="subtext">
+                Explore Roamly today. Help shape what comes next.
+              </p>
+            </div>
+          </div>
+          <div className="plan-grid">
+            <section className="panel">
+              <span className="eyebrow">EARLY ACCESS</span>
+              <h2 style={{ fontSize: 24, marginTop: 13 }}>
+                The everyday explorer
+              </h2>
+              <div className="price">Free</div>
+              <ul>
+                {[
+                  "Explore destination inspiration",
+                  "Edit and save sample itineraries",
+                  "Print your day-by-day plans",
+                  "Personalized AI when available",
+                ].map((t) => (
+                  <li key={t}>
+                    <Check />
+                    {t}
+                  </li>
+                ))}
+              </ul>
+              <Link href="/" className="primary" style={{ marginTop: 22 }}>
+                Start exploring
+              </Link>
+            </section>
+            <section
+              className="panel"
+              style={{ borderColor: "#91b09e", background: "#f1f6f2" }}
+            >
+              <span className="eyebrow">ROAMLY PLUS · COMING SOON</span>
+              <h2 style={{ fontSize: 24, marginTop: 13 }}>
+                For your next big adventure
+              </h2>
+              <div className="price" style={{ fontSize: 28 }}>
+                Join the early list
+              </div>
+              <p className="subtext">
+                We’re shaping a paid plan for frequent travelers. Pricing and
+                included features will be announced before launch. No payment is
+                collected.
+              </p>
+              <button
+                disabled={busy || joined}
+                className="primary"
+                style={{ marginTop: 28, width: "100%" }}
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    await api("/api/waitlist", { method: "POST" });
+                    setJoined(true);
+                    toast.success(
+                      "You’re on the Roamly Plus early-access list.",
+                    );
+                  } catch (e) {
+                    toast.error((e as Error).message);
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                {joined
+                  ? "You’re on the list"
+                  : busy
+                    ? "Joining…"
+                    : "Join the Plus waitlist"}
+                <ArrowRight size={15} />
+              </button>
+              <p className="form-note">
+                Uses your signed-in email. No charge, no commitment.
+              </p>
+            </section>
+          </div>
+        </>
+      )}
+      <footer className="footer">
+        <span>© {new Date().getFullYear()} Roamly. Go your own way.</span>
+        <div style={{ display: "flex", gap: 17 }}>
+          <button onClick={() => setLegal("Privacy")}>Privacy</button>
+          <button onClick={() => setLegal("Travel guidance")}>
+            Travel guidance
+          </button>
+          <button onClick={() => setLegal("Photography")}>Photography</button>
+        </div>
+      </footer>
+      <Dialog open={!!legal} onOpenChange={() => setLegal(null)}>
+        <DialogContent>
+          <DialogTitle>{legal}</DialogTitle>
+          <DialogDescription>
+            {legal === "Privacy" ? (
+              "Roamly stores saved itineraries against your signed-in account. Your trip preferences are sent to the AI provider only when you request generation. Joining the Plus list stores your account email. Delete individual saved trips in My trips. Avoid entering sensitive medical or personal details. Public-launch privacy and support details are still being finalized."
+            ) : legal === "Photography" ? (
+              <>
+                Photography by{" "}
+                <a
+                  href="https://unsplash.com/photos/5CsJnGSR4s4"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Raul Taciu
+                </a>
+                ,{" "}
+                <a
+                  href="https://unsplash.com/photos/yVusp1IqwpY"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Bruce Tang
+                </a>
+                , and{" "}
+                <a
+                  href="https://unsplash.com/photos/jN9JnZ-SyVc"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Radoslav Bali
+                </a>{" "}
+                on Unsplash.
+              </>
+            ) : (
+              "Itineraries are suggestions, not reservations or guarantees. Prices, opening hours, weather, entry requirements, accessibility, and trail conditions need independent verification. Roamly does not currently sell bookings or charge for itineraries."
+            )}
+          </DialogDescription>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!edit} onOpenChange={() => setEdit(null)}>
+        <DialogContent>
+          <DialogTitle>Make this moment yours</DialogTitle>
+          <DialogDescription>
+            Update the activity, then save your itinerary to keep the changes.
+          </DialogDescription>
+          {edit && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                setTrip((t) => {
+                  if (!t) return t;
+                  const copy = structuredClone(t);
+                  copy.itinerary.days[edit.day].activities[
+                    edit.activity
+                  ].title = edit.title;
+                  copy.itinerary.days[edit.day].activities[
+                    edit.activity
+                  ].description = edit.description;
+                  return copy;
+                });
+                setEdit(null);
+              }}
+            >
+              <label className="field">
+                Activity
+                <input
+                  required
+                  maxLength={160}
+                  value={edit.title}
+                  onChange={(e) => setEdit({ ...edit, title: e.target.value })}
+                />
+              </label>
+              <label className="field" style={{ marginTop: 15 }}>
+                Your plan
+                <textarea
+                  required
+                  rows={5}
+                  maxLength={800}
+                  value={edit.description}
+                  onChange={(e) =>
+                    setEdit({ ...edit, description: e.target.value })
+                  }
+                />
+              </label>
+              <button className="primary" style={{ marginTop: 20 }}>
+                Update activity
+              </button>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+    </main>
+  );
+}
