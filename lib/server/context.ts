@@ -1,4 +1,4 @@
-import { headers } from "next/headers";
+import { currentUser } from "@/lib/auth/server";
 import { env } from "cloudflare:workers";
 export class ApiError extends Error {
   constructor(
@@ -17,10 +17,9 @@ export function db() {
   return env.DB;
 }
 export async function identity() {
-  const h = await headers();
-  const id = h.get("oai-authenticated-user-id");
-  if (!id) throw new ApiError(401, "Please sign in to continue.");
-  return { id, email: h.get("oai-authenticated-user-email") ?? "" };
+  const user = await currentUser();
+  if (!user) throw new ApiError(401, "Please sign in to continue.");
+  return user;
 }
 export function sameOrigin(r: Request) {
   const origin = r.headers.get("origin");

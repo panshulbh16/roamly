@@ -8,6 +8,13 @@
       "when": 1788764204624,
       "tag": "0000_thick_mesmero",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1788766229959,
+      "tag": "0001_blue_stardust",
+      "breakpoints": true
     }
   ]
 }

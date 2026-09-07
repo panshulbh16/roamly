@@ -145,6 +145,18 @@ export function Workspace({
     if (view === "trips") void load();
     if (view === "plan") {
       const query = new URLSearchParams(window.location.search);
+      const historyId = query.get("history");
+      if (historyId) {
+        setBusy(true);
+        api("/api/history?id=" + encodeURIComponent(historyId))
+          .then(({ entry }) => {
+            setForm(entry.intake);
+            setTrip(entry.trip);
+            setExtra(true);
+          })
+          .catch((e) => setError(e.message))
+          .finally(() => setBusy(false));
+      }
       if (query.get("destination"))
         setForm((f) => ({
           ...f,
@@ -514,7 +526,7 @@ export function Workspace({
                 <p className="form-note">
                   {aiReady
                     ? "Personalized around you. Up to 5 plans per day."
-                    : "Early access · Personalized AI planning opens soon."}
+                    : "Early access · Searches are saved to History. AI planning opens soon."}
                 </p>
               </form>
             </section>
@@ -807,7 +819,7 @@ export function Workspace({
           <DialogTitle>{legal}</DialogTitle>
           <DialogDescription>
             {legal === "Privacy" ? (
-              "Roamly stores saved itineraries against your signed-in account. Your trip preferences are sent to the AI provider only when you request generation. Joining the Plus list stores your account email. Delete individual saved trips in My trips. Avoid entering sensitive medical or personal details. Public-launch privacy and support details are still being finalized."
+              "Roamly stores submitted searches and saved itineraries against your signed-in account. Delete searches in History and saved trips in My trips. Google/email sign-in is handled by Supabase when connected. Your trip preferences are sent to the AI provider only when you request generation. Joining the Plus list stores your account email. Delete individual saved trips in My trips. Avoid entering sensitive medical or personal details. Public-launch privacy and support details are still being finalized."
             ) : legal === "Photography" ? (
               <>
                 Photography by{" "}

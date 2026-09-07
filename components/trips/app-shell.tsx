@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import type { AppUser } from "@/lib/auth/server";
 import { usePathname } from "next/navigation";
 import {
   Compass,
@@ -10,6 +11,8 @@ import {
   HelpCircle,
   Leaf,
   ChevronDown,
+  History,
+  UserRound,
 } from "lucide-react";
 import {
   SidebarProvider,
@@ -26,12 +29,13 @@ import {
 } from "@/components/ui/dialog";
 export function AppShell({
   children,
-  name,
+  user,
 }: {
   children: React.ReactNode;
-  name: string;
+  user: AppUser | null;
 }) {
   const path = usePathname();
+  const name = user?.displayName ?? "Guest";
   return (
     <SidebarProvider
       style={{ "--sidebar-width": "225px" } as React.CSSProperties}
@@ -46,6 +50,7 @@ export function AppShell({
             {[
               { href: "/", icon: Sparkles, label: "Plan a trip" },
               { href: "/trips", icon: Map, label: "My trips" },
+              { href: "/history", icon: History, label: "History" },
               { href: "/explore", icon: Compass, label: "Explore" },
             ].map((n) => (
               <Link
@@ -75,18 +80,22 @@ export function AppShell({
               Discover Roamly Plus <ArrowUpRight size={13} />
             </Link>
           </div>
-          <div className="account">
+          <Link
+            href="/auth"
+            className="account"
+            aria-label={user ? "Manage your account" : "Sign in to Roamly"}
+          >
             <div className="avatar">{name.slice(0, 1).toUpperCase()}</div>
             <div>
               <strong>
                 {name.includes("@") ? "Your account" : name.split(" ")[0]}
               </strong>
               <div style={{ color: "#939b95", fontSize: 11, marginTop: 3 }}>
-                Early access
+                {user ? "Manage account" : "Sign in to save your trips"}
               </div>
             </div>
             <ChevronDown size={14} style={{ marginLeft: "auto" }} />
-          </div>
+          </Link>
         </div>
       </Sidebar>
       <SidebarInset>
@@ -122,6 +131,10 @@ export function AppShell({
             <Link href="/pricing" className="text-button">
               <Sparkles size={15} />
               Roamly Plus
+            </Link>
+            <Link href="/auth" className="secondary-button account-button">
+              <UserRound size={16} />
+              {user ? "Account" : "Sign in"}
             </Link>
           </div>
         </header>

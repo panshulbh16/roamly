@@ -31,3 +31,23 @@ No architecture eliminates future issues. Prefer small feature boundaries, addit
 
 ## Assets
 Bundled Unsplash photography: Raul Taciu (Dolomites), Bruce Tang (Kyoto), Radoslav Bali (Bali). Attribution links are available in the app footer.
+
+## Google and email authentication
+
+Provider integration: Supabase Auth, using the official SSR client with PKCE for Google OAuth, email verification codes, HttpOnly session cookies and server-side `getUser()` verification. `proxy.ts` rotates expired sessions and forwards refreshed cookies into the request and response. No browser-only identity is trusted.
+
+Setup required before activation:
+- Set `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` to the project's URL and publishable key. Never use a service-role key here.
+- In Supabase, enable Google and configure its Google OAuth client. Register Supabase's callback URI in Google Cloud. Allow the exact Roamly `/auth/callback` URL in Supabase's redirect allowlist.
+- Enable email authentication and configure production SMTP. Set the Magic Link email template to display `{{ .Token }}`; this app uses email OTP, not passwords. Codes of 6–8 digits are accepted.
+- Test Google consent/cancellation, expired and invalid email codes, session refresh, logout and a fresh browser login against that configured project. Only then set `SUPABASE_AUTH_ENABLED=true` for public use.
+
+The current private host still has its outer ChatGPT access policy. An independent Google/email login does not grant access through that policy. Public launch requires explicitly changing the Site audience or using external hosting. Do not silently broaden access.
+
+Existing ChatGPT-owned trips/history retain their original owner IDs. Supabase users are namespaced `supabase:<uuid>`. Accounts are deliberately not merged just because emails match; safe migration requires proving control of both identities. Signing out suppresses automatic fallback to the platform identity.
+
+## Search history
+
+Every valid authenticated generation submission creates a separate D1 record before the AI request. Both completed and unsuccessful requests stay visible. History can reopen full inputs and completed results, paginate older records, and delete one entry. No automatic history retention deletion is performed. This cannot recover searches made before history tracking was introduced.
+
+Run `node --test tests/auth-history.test.mjs` for real route-handler tests against an isolated SQLite database with injected platform headers. These cover Auckland followed by Austria, reopening results, account isolation, pagination, invalid inputs, and fail-closed authentication. Additional tests exercise the official Supabase SDK against a simulated provider for email codes, Google PKCE exchange, session verification, and sign-out. Real provider credentials are absent: these tests do not verify live Google login or email delivery. Run `python tests/storage_test.py` for saved-trip and quota checks.

@@ -18,3 +18,16 @@ export const waitlist = sqliteTable("waitlist", {
   email: text("email").notNull(),
   createdAt: text("created_at").notNull(),
 });
+export const searchHistory = sqliteTable(
+  "search_history",
+  {
+    id: text("id").primaryKey(),
+    owner: text("owner").notNull(),
+    intake: text("intake").notNull(),
+    trip: text("trip"),
+    status: text("status").notNull(),
+    error: text("error"),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [index("idx_history_owner_created").on(t.owner, t.createdAt, t.id)],
+);
