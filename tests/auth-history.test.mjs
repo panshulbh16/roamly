@@ -12,9 +12,164 @@ const compiled=await build({entryPoints:['tests/auth-history-entry.ts'],bundle:t
 const app=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text).toString('base64'));
 const input={destination:'Auckland',startDate:'',days:5,travelers:2,budget:'Comfort',pace:'Balanced',interests:['Nature'],needs:'',homeCity:''};
 const origin='https://roamly.test';
+test('planner sends optional workspace header and validates the provider itinerary',async()=>{
+  const originalFetch=globalThis.fetch;
+  const itinerary={title:'Auckland',summary:'A short visit',days:[{title:'Day 1',activities:[{time:'Morning',title:'Walk',description:'Explore the waterfront',place:'Auckland'}]}],tips:[]};
+  context.env.ANTHROPIC_API_KEY='fixture-key';
+  context.env.ANTHROPIC_MODEL='fixture-model';
+  context.env.AI_MONTHLY_REQUEST_LIMIT='100';
+  try {
+    for(const workspace of [undefined,'wrkspc_fixture']) {
+      if(workspace) context.env.ANTHROPIC_WORKSPACE_ID=workspace;
+      else delete context.env.ANTHROPIC_WORKSPACE_ID;
+      globalThis.fetch=async(url,options)=>{
+        assert.equal(url,'https://api.anthropic.com/v1/messages');
+        const headers=new Headers(options.headers);
+        assert.equal(headers.get('anthropic-workspace-id'),workspace??null);
+        assert.equal(headers.get('x-api-key'),'fixture-key');
+        assert.equal(JSON.parse(options.body).model,'fixture-model');
+        assert.equal(JSON.parse(options.body).max_tokens,4500);
+        assert.match(JSON.parse(options.body).system,/exactly the requested number of days/);
+        return Response.json({content:[{type:'text',text:JSON.stringify(itinerary)}],stop_reason:'end_turn'});
+      };
+      assert.deepEqual(await new app.planner.AnthropicPlanner().generate({...input,days:1}),itinerary);
+    }
+  } finally {
+    globalThis.fetch=originalFetch;
+    delete context.env.ANTHROPIC_API_KEY; delete context.env.ANTHROPIC_MODEL; delete context.env.ANTHROPIC_WORKSPACE_ID; delete context.env.AI_MONTHLY_REQUEST_LIMIT;
+  }
+});
+test('planner turns provider timeouts into a clear 504',async()=>{
+  const originalFetch=globalThis.fetch;
+  context.env.ANTHROPIC_API_KEY='fixture-key';
+  context.env.ANTHROPIC_MODEL='fixture-model';
+  globalThis.fetch=async()=>{throw new DOMException('timed out','TimeoutError')};
+  try {
+    await assert.rejects(()=>new app.planner.AnthropicPlanner().generate({...input,days:1}),/planning service took too long/);
+  } finally {
+    globalThis.fetch=originalFetch;
+    delete context.env.ANTHROPIC_API_KEY; delete context.env.ANTHROPIC_MODEL;
+  }
+});
+test('planner turns malformed provider JSON into a clear 502',async()=>{
+  const originalFetch=globalThis.fetch;
+  context.env.ANTHROPIC_API_KEY='fixture-key';
+  context.env.ANTHROPIC_MODEL='fixture-model';
+  context.env.AI_MONTHLY_REQUEST_LIMIT='100';
+  globalThis.fetch=async()=>Response.json({error:'upstream'});
+  try {
+    await assert.rejects(()=>new app.planner.AnthropicPlanner().generate({...input,days:1}),/planning service returned an incomplete response/);
+  } finally {
+    globalThis.fetch=originalFetch;
+    delete context.env.ANTHROPIC_API_KEY; delete context.env.ANTHROPIC_MODEL; delete context.env.AI_MONTHLY_REQUEST_LIMIT;
+  }
+});
 function user(id='alice'){context.headers=new Headers({'oai-authenticated-user-id':id,'oai-authenticated-user-email':id+'@example.test'});}
 function req(path,data,method='POST'){return new Request(origin+path,{method,headers:{origin,'Content-Type':'application/json'},...(data===undefined?{}:{body:JSON.stringify(data)})})}
 test('anonymous users cannot read history or submit searches',async()=>{context.headers=new Headers();assert.equal((await app.history.GET(req('/api/history',undefined,'GET'))).status,401);assert.equal((await app.generate.POST(req('/api/generate',input))).status,401);assert.equal(sql.prepare('SELECT count(*) AS n FROM search_history').get().n,0)});
+test('configured public Supabase values do not sign in a local visitor while auth is disabled',async()=>{
+  context.headers=new Headers();
+  Object.assign(context.env,{SUPABASE_URL:'https://fixture.supabase.co',SUPABASE_PUBLISHABLE_KEY:'fixture-public-key',SUPABASE_AUTH_ENABLED:'false'});
+  try {
+    assert.equal(await app.identity.currentUser(),null);
+    assert.equal((await app.email.POST(req('/api/auth/email',{email:'local@example.test'}))).status,503);
+    assert.equal((await app.history.GET(req('/api/history',undefined,'GET'))).status,401);
+    assert.equal(jar.size,0);
+  } finally {
+    delete context.env.SUPABASE_URL; delete context.env.SUPABASE_PUBLISHABLE_KEY; delete context.env.SUPABASE_AUTH_ENABLED;
+  }
+});
+test('intake accepts the full supported matrix of trip choices',async()=>{
+  user('matrix-user');
+  const destinations=['LA','São Paulo, Brazil','Tokyo / Kyoto','Café, Québec — 旅','Z'.repeat(120)];
+  const interests=[[],['Nature'],['Nature','Food','Culture','Adventure','Photography','Relaxation','History','Art']];
+  let expected=0;
+  for(const destination of destinations)
+    for(const days of Array.from({length:10},(_,i)=>i+1))
+      for(const travelers of [1,10])
+        for(const budget of ['Budget','Comfort','Luxury'])
+          for(const pace of ['Relaxed','Balanced','Packed'])
+            for(const selected of interests){
+              const response=await app.generate.POST(req('/api/generate',{destination,startDate:'',days,travelers,budget,pace,interests:selected,needs:'',homeCity:''}));
+              assert.equal(response.status,503,`${destination}/${days}/${travelers}/${budget}/${pace}`);
+              expected++;
+            }
+  const row=sql.prepare("SELECT count(*) AS n FROM search_history WHERE owner='matrix-user'").get();
+  assert.equal(row.n,expected);
+  user();
+});
+test('intake rejects every invalid boundary before creating history',async()=>{
+  user('invalid-input-user');
+  const base={destination:'Auckland',startDate:'',days:5,travelers:2,budget:'Comfort',pace:'Balanced',interests:['Nature'],needs:'',homeCity:''};
+  const cases=[
+    ['short destination',{destination:'A'}],['long destination',{destination:'A'.repeat(121)}],
+    ['bad date',{startDate:'2026-02-30'}],['too few days',{days:0}],['too many days',{days:11}],['fractional days',{days:1.5}],
+    ['too few travelers',{travelers:0}],['too many travelers',{travelers:11}],['bad budget',{budget:'Free'}],['bad pace',{pace:'Chaotic'}],
+    ['too many interests',{interests:Array.from({length:9},(_,i)=>`i${i}`)}],['long interest',{interests:['x'.repeat(36)]}],
+    ['long needs',{needs:'x'.repeat(601)}],['long home city',{homeCity:'x'.repeat(101)}],
+  ];
+  const before=sql.prepare("SELECT count(*) AS n FROM search_history WHERE owner='invalid-input-user'").get().n;
+  for(const [label,change] of cases){
+    const response=await app.generate.POST(req('/api/generate',{...base,...change}));
+    assert.equal(response.status,400,label);
+  }
+  const after=sql.prepare("SELECT count(*) AS n FROM search_history WHERE owner='invalid-input-user'").get().n;
+  assert.equal(after,before);
+  user();
+});
+test('provider itineraries for every supported day count are accepted',async()=>{
+  const originalFetch=globalThis.fetch;
+  context.env.ANTHROPIC_API_KEY='fixture-key';
+  context.env.ANTHROPIC_MODEL='fixture-model';
+  context.env.AI_MONTHLY_REQUEST_LIMIT='100';
+  globalThis.fetch=async(_url,options)=>{
+    const request=JSON.parse(options.body);
+    const requested=JSON.parse(request.messages[0].content).days;
+    return Response.json({content:[{type:'text',text:JSON.stringify({
+      title:`Day count ${requested}`,
+      summary:'Fixture itinerary',
+      days:Array.from({length:requested},(_,i)=>({title:`Day ${i+1}`,activities:[{time:'Morning',title:'Walk',description:'A short walk.',place:'Local area'}]})),
+      tips:[],
+    })}],stop_reason:'end_turn'});
+  };
+  try {
+    for(const days of Array.from({length:10},(_,i)=>i+1)){
+      user(`all-days-${days}`);
+      const response=await app.generate.POST(req('/api/generate',{...input,days}));
+      const result=await response.json();
+      assert.equal(response.status,200,`day count ${days}`);
+      assert.equal(result.trip.itinerary.days.length,days);
+    }
+  } finally {
+    globalThis.fetch=originalFetch;
+    delete context.env.ANTHROPIC_API_KEY; delete context.env.ANTHROPIC_MODEL; delete context.env.AI_MONTHLY_REQUEST_LIMIT;
+    user();
+  }
+});
+test('saved trips can be created, listed, replaced, and deleted through the API',async()=>{
+  user('save-user');
+  const trip=structuredClone(app.sample.sampleTrip);
+  trip.id='6a2b8f2d-67f4-4f9c-a9fb-4f2f0d1e7a11';
+  const created=await app.trips.POST(req('/api/trips',trip));
+  assert.equal(created.status,200);
+  assert.deepEqual(await (await app.trips.GET(req('/api/trips',undefined,'GET'))).json(),{trips:[trip]});
+  const changed={...trip,itinerary:{...trip.itinerary,title:'Updated example'}};
+  assert.equal((await app.trips.POST(req('/api/trips',changed))).status,200);
+  assert.equal((await (await app.trips.GET(req('/api/trips',undefined,'GET'))).json()).trips[0].itinerary.title,'Updated example');
+  assert.equal((await app.trips.DELETE(req('/api/trips',{id:trip.id},'DELETE'))).status,200);
+  assert.deepEqual(await (await app.trips.GET(req('/api/trips',undefined,'GET'))).json(),{trips:[]});
+  user();
+});
+test('waitlist join is authenticated and idempotent',async()=>{
+  user('waitlist-user');
+  assert.equal((await app.waitlist.POST(req('/api/waitlist',{}))).status,200);
+  assert.equal((await app.waitlist.POST(req('/api/waitlist',{}))).status,200);
+  const row=sql.prepare("SELECT owner,email FROM waitlist WHERE owner='waitlist-user'").get();
+  assert.equal(row.owner,'waitlist-user');
+  assert.equal(row.email,'waitlist-user@example.test');
+  assert.equal(sql.prepare("SELECT count(*) AS n FROM waitlist WHERE owner='waitlist-user'").get().n,1);
+  user();
+});
 let aucklandId;
 test('Auckland followed by Austria retains both searches when AI is unavailable',async()=>{user();for(const destination of ['Auckland','Austria'])assert.equal((await app.generate.POST(req('/api/generate',{...input,destination}))).status,503);const r=await app.history.GET(req('/api/history',undefined,'GET'));assert.equal(r.status,200);const {entries}=await r.json();assert.equal(entries.length,2);assert.deepEqual(new Set(entries.map(x=>x.intake.destination)),new Set(['Auckland','Austria']));assert.ok(entries.every(x=>x.status==='failed'));aucklandId=entries.find(x=>x.intake.destination==='Auckland').id;const restored=await (await app.history.GET(req('/api/history?id='+aucklandId,undefined,'GET'))).json();assert.equal(restored.entry.intake.destination,'Auckland');assert.equal(restored.entry.intake.days,5)});
 test('another user cannot list, fetch or delete the first account’s searches',async()=>{user('bob');assert.deepEqual((await (await app.history.GET(req('/api/history',undefined,'GET'))).json()).entries,[]);assert.equal((await app.history.GET(req('/api/history?id='+aucklandId,undefined,'GET'))).status,404);await app.history.DELETE(req('/api/history',{id:aucklandId},'DELETE'));user();assert.equal((await app.history.GET(req('/api/history?id='+aucklandId,undefined,'GET'))).status,200)});

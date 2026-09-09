@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   History,
   ArrowRight,
@@ -41,7 +42,8 @@ export function HistoryView() {
     }
   }
   useEffect(() => {
-    void load();
+    const task = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(task);
   }, []);
   async function remove(id: string) {
     try {
@@ -67,9 +69,9 @@ export function HistoryView() {
             Every submitted trip search, saved automatically to your account.
           </p>
         </div>
-        <a className="primary" href="/">
+        <Link className="primary" href="/">
           Plan a trip <ArrowRight size={16} />
-        </a>
+        </Link>
       </div>
       {error && (
         <div role="alert" className="error">
@@ -93,9 +95,9 @@ export function HistoryView() {
             <br />
             You can come back to each search here.
           </p>
-          <a href="/" className="primary" style={{ width: "fit-content" }}>
+          <Link href="/" className="primary" style={{ width: "fit-content" }}>
             Plan a trip
-          </a>
+          </Link>
         </section>
       ) : (
         <div className="history-list">
@@ -130,13 +132,13 @@ export function HistoryView() {
                 )}
               </div>
               <div className="history-actions">
-                <a
+                <Link
                   className="secondary-button"
                   href={"/?history=" + encodeURIComponent(entry.id)}
                 >
                   {entry.trip ? "Open itinerary" : "Reopen search"}
                   <ArrowRight size={15} />
-                </a>
+                </Link>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <button

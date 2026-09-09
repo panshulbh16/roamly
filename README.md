@@ -12,11 +12,19 @@ An early-access travel planning app. This release is private and does not collec
 The host supplies trusted identity headers; never expose this Worker outside its trusted dispatcher without replacing identity verification. All saved-record queries scope to the authenticated owner. Mutation routes enforce same-origin requests and parameterize queries. No secrets belong in browser bundles.
 
 ## AI activation
-Configure hosted secrets `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, and a positive integer `AI_MONTHLY_REQUEST_LIMIT`. Use a provider-supported model identifier. AI is fail-closed without all three. Each attempt atomically reserves a daily user request (5/day) and monthly global request. Attempts are charged against quota even when generation fails, intentionally avoiding retry spend loops. Provider requests have a 55-second timeout and 6,500 output-token ceiling, with validated input/output and exact day-count checks. No automatic provider retries.
+For an API key that is not workspace-scoped, also set `ANTHROPIC_WORKSPACE_ID`. Roamly sends it as the `anthropic-workspace-id` header; omit it for keys that already select their workspace.
+
+Configure hosted secrets `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, and a positive integer `AI_MONTHLY_REQUEST_LIMIT`. Use a provider-supported model identifier. AI is fail-closed without all three. Each attempt atomically reserves a daily user request (5/day) and monthly global request. Attempts are charged against quota even when generation fails, intentionally avoiding retry spend loops. Provider requests have a 55-second timeout and 4,500 output-token ceiling, with validated input/output and exact day-count checks. No automatic provider retries.
 
 The request ceiling is NOT a monetary budget guarantee. Configure an Anthropic account spending cap and calculate the request ceiling against selected model rates and bounded payload/output. Add cost-ledger reconciliation, operational alerts and stronger abuse protections before opening to the public.
 
 ## Development
+Start the local app with `npm run dev`. If `.env` does not already exist, copy `.env.example` to `.env` and enter provider values there; never commit secrets or overwrite an existing configuration. With `SUPABASE_AUTH_ENABLED=false`, local visitors are signed out: ChatGPT identity is supplied by the hosted Sites dispatcher and is not available automatically on localhost. The sample itinerary remains available without provider configuration.
+
+Local Google/email sign-in requires Supabase configuration and the exact redirect allowlist entry `http://localhost:5173/auth/callback`. Google Cloud's OAuth callback is the Supabase project's `/auth/v1/callback`, not the local app URL. Email code login requires an email template containing `{{ .Token }}` and working email delivery. The current Supabase dashboard requires custom SMTP or an eligible plan to customize its default link-only template. Configure these before enabling local authentication. AI generation separately requires an Anthropic API key, supported model, and a positive monthly request limit in `.env`.
+
+The local Cloudflare runtime has a separate database; it does not copy hosted trips or users. Apply the checked-in migrations to that local database before testing signed-in searches. Route tests apply migrations to an isolated in-memory SQLite database; passing them does not establish that the development database is initialized or that live providers work.
+
 Use the checked-in npm lockfile. `npm run db:generate` generates migrations; inspect SQL before deployment. Never edit applied migrations. `npm run build` validates the production Worker build. `npx tsc --noEmit` validates TypeScript. Domain/security migration tests are in `tests/roamly.test.mjs`.
 
 ## Commercial launch gates
@@ -47,6 +55,8 @@ The current private host still has its outer ChatGPT access policy. An independe
 Existing ChatGPT-owned trips/history retain their original owner IDs. Supabase users are namespaced `supabase:<uuid>`. Accounts are deliberately not merged just because emails match; safe migration requires proving control of both identities. Signing out suppresses automatic fallback to the platform identity.
 
 ## Search history
+
+Optional paid integration check: `ROAMLY_LIVE_TEST=1 node --test tests/live-planner.test.mjs` uses the local `.env` to generate one-day Auckland and Austria itineraries, then reopens an isolated SQLite database and verifies both stored results. It simulates identity and does not test browser login or the development database. The test is skipped in normal test runs; its temporary database path is printed for inspection.
 
 Every valid authenticated generation submission creates a separate D1 record before the AI request. Both completed and unsuccessful requests stay visible. History can reopen full inputs and completed results, paginate older records, and delete one entry. No automatic history retention deletion is performed. This cannot recover searches made before history tracking was introduced.
 

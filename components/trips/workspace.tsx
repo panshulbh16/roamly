@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   Sparkles,
   MapPin,
@@ -12,7 +13,6 @@ import {
   Camera,
   Sun,
   Check,
-  ShieldCheck,
   SlidersHorizontal,
   Heart,
   LoaderCircle,
@@ -112,6 +112,7 @@ export function Workspace({
   view?: "plan" | "trips" | "explore" | "pricing";
   aiReady?: boolean;
 }) {
+  const searchParams = useSearchParams();
   const [form, setForm] = useState<Intake>(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -142,28 +143,48 @@ export function Workspace({
     }
   }
   useEffect(() => {
-    if (view === "trips") void load();
+    let task: number | undefined;
+    let historyTask: number | undefined;
+    let destinationTask: number | undefined;
+    if (view === "trips")
+      task = window.setTimeout(() => void load(), 0);
     if (view === "plan") {
-      const query = new URLSearchParams(window.location.search);
-      const historyId = query.get("history");
+      const historyId = searchParams.get("history");
       if (historyId) {
-        setBusy(true);
-        api("/api/history?id=" + encodeURIComponent(historyId))
-          .then(({ entry }) => {
-            setForm(entry.intake);
-            setTrip(entry.trip);
-            setExtra(true);
-          })
-          .catch((e) => setError(e.message))
-          .finally(() => setBusy(false));
+        historyTask = window.setTimeout(() => {
+          setBusy(true);
+          api("/api/history?id=" + encodeURIComponent(historyId))
+            .then(({ entry }) => {
+              setForm(entry.intake);
+              setTrip(entry.trip);
+              setExtra(true);
+            })
+            .catch((e) => setError(e.message))
+            .finally(() => setBusy(false));
+        }, 0);
       }
-      if (query.get("destination"))
-        setForm((f) => ({
-          ...f,
-          destination: query.get("destination")!.slice(0, 120),
-        }));
+      const destination = searchParams.get("destination");
+      const nextDestination = destination
+        ? destination.slice(0, 120)
+        : historyId
+          ? null
+          : "";
+      if (nextDestination !== null)
+        destinationTask = window.setTimeout(
+          () =>
+            setForm((f) => ({
+              ...f,
+              destination: nextDestination,
+            })),
+          0,
+        );
     }
-  }, [view]);
+    return () => {
+      if (task !== undefined) window.clearTimeout(task);
+      if (historyTask !== undefined) window.clearTimeout(historyTask);
+      if (destinationTask !== undefined) window.clearTimeout(destinationTask);
+    };
+  }, [searchParams, view]);
   async function generate(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);

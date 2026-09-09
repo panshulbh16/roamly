@@ -5,7 +5,13 @@ export const intakeSchema = z.object({
     .string()
     .max(10)
     .refine(
-      (v) => !v || (/^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(Date.parse(v))),
+      (v) => {
+        if (!v) return true;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+        const [year, month, day] = v.split("-").map(Number);
+        if (year < 1 || month < 1 || month > 12 || day < 1) return false;
+        return day <= new Date(Date.UTC(year, month, 0)).getUTCDate();
+      },
       "Choose a valid date",
     ),
   days: z.number().int().min(1).max(10),
