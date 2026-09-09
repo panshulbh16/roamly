@@ -61,3 +61,9 @@ Optional paid integration check: `ROAMLY_LIVE_TEST=1 node --test tests/live-plan
 Every valid authenticated generation submission creates a separate D1 record before the AI request. Both completed and unsuccessful requests stay visible. History can reopen full inputs and completed results, paginate older records, and delete one entry. No automatic history retention deletion is performed. This cannot recover searches made before history tracking was introduced.
 
 Run `node --test tests/auth-history.test.mjs` for real route-handler tests against an isolated SQLite database with injected platform headers. These cover Auckland followed by Austria, reopening results, account isolation, pagination, invalid inputs, and fail-closed authentication. Additional tests exercise the official Supabase SDK against a simulated provider for email codes, Google PKCE exchange, session verification, and sign-out. Real provider credentials are absent: these tests do not verify live Google login or email delivery. Run `python tests/storage_test.py` for saved-trip and quota checks.
+
+## Automated checks
+
+GitHub Actions runs TypeScript, lint, the production build, all Node tests, and SQLite storage tests on Linux and macOS for pushes and pull requests. No provider secrets are needed; paid live tests remain opt-in. Locally, run `npm ci`, `npm test`, `npx tsc --noEmit`, `npm run lint`, and `python3 tests/storage_test.py`.
+
+The build timeout uses Node and works on macOS without GNU coreutils. It defaults to three minutes; override with `SITES_BUILD_TIMEOUT=5m npm run build`. A timed-out build exits with status 124.
