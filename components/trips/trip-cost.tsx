@@ -2,17 +2,31 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Backpack, Armchair, Gem, ArrowLeft, ArrowUpRight } from "lucide-react";
+import { Backpack, Armchair, Gem, ArrowLeft } from "lucide-react";
 import { bands, browserCurrency, costInputSchema, costUrl, currencies, destinationBand, estimateCost, styles, type CostBand, type CostInput } from "@/lib/trips/cost";
 const icons = { Budget: Backpack, Comfort: Armchair, Luxury: Gem };
 const descriptions = { Budget: "Simple stays & local food", Comfort: "A little more room to relax", Luxury: "Premium stays & experiences" };
 export function TripCostLinks({ input }: { input: CostInput }) {
   if (!costInputSchema.safeParse(input).success) return null;
-  return <section className="trip-cost-entry" aria-label="Compare trip costs">
-    <div className="section-heading"><h2>What could your trip cost?</h2><span className="eyebrow">COMPARE TRAVEL STYLES</span></div>
-    <div className="cost-styles">{styles.map(style => { const Icon = icons[style]; return <Link key={style} className="cost-style" href={costUrl(input, style)} target="_blank" rel="noopener noreferrer" aria-label={`${style} cost estimate (opens in a new tab)`}><Icon size={22} aria-hidden="true" /><span><strong>{style}</strong><small>{descriptions[style]}</small></span><ArrowUpRight size={15} aria-hidden="true" /></Link>; })}</div>
-    <p className="form-note">Opens a cost breakdown in a new tab, keeping your itinerary here.</p>
-  </section>;
+  return (
+    <section className="trip-cost-entry" aria-label="Compare trip costs">
+      <span className="cost-shortcuts-label">Estimate cost</span>
+      <div className="cost-shortcuts">
+        {styles.map(style => {
+          const Icon = icons[style];
+          return (
+            <Link key={style} className="cost-shortcut" href={costUrl(input, style)}
+              target="_blank" rel="noopener noreferrer"
+              title={`${style} estimate · opens in a new tab`}
+              aria-label={`${style} cost estimate (opens in a new tab)`}>
+              <Icon size={16} aria-hidden="true" />
+              <span>{style}</span>
+            </Link>
+          );
+        })}
+      </div>
+    </section>
+  );
 }
 export function TripCostPage() {
   const params = useSearchParams();

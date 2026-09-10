@@ -78,6 +78,9 @@ test('style cards keep unsaved planner open and cost page exposes assumptions ac
   const { TripCostLinks, CostBreakdown } = await vite.ssrLoadModule('/components/trips/trip-cost.tsx');
   const links = renderToStaticMarkup(React.createElement(TripCostLinks, { input }));
   assert.equal((links.match(/target="_blank"/g) ?? []).length, 3);
+  assert.equal((links.match(/class="cost-shortcut"/g) ?? []).length, 3);
+  assert.equal((links.match(/width="16"/g) ?? []).length, 3);
+  assert.doesNotMatch(links, /<h2|<small|What could your trip cost|Simple stays/);
   for (const style of cost.styles) assert.ok(links.includes(`budget=${style}`));
   assert.equal(renderToStaticMarkup(React.createElement(TripCostLinks, { input: { ...input, destination: '' } })), '');
   const page = renderToStaticMarkup(React.createElement(CostBreakdown, { input }));

@@ -485,7 +485,7 @@ export function Workspace({
                     values={["Budget", "Comfort", "Luxury"]}
                     onChange={(v) => update("budget", v as Intake["budget"])}
                   />
-                  <div className="wide"><TripCostLinks input={form} /></div>
+                  <TripCostLinks input={form} />
                   <div className="field wide">
                     What do you love?
                     <div className="interests">

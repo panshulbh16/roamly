@@ -1282,8 +1282,14 @@ textarea {
 .inspiration-card:focus-visible { outline: 3px solid #70a588; outline-offset: -3px; }
 
 /* Cost comparison reuses the planner's green surfaces and compact controls. */
-.trip-cost-entry { margin: 24px 0; }
-.trip-cost-entry .section-heading { margin: 0 0 14px; flex-wrap: wrap; gap: 8px; }
+.trip-cost-entry { margin: 20px 0; min-width: 0; }
+.form-grid > .trip-cost-entry { margin: 0; align-self: start; }
+.cost-shortcuts-label { display: block; font-size: 14px; font-weight: 600; color: #53605a; margin-bottom: 8px; }
+.cost-shortcuts { display: flex; flex-wrap: wrap; gap: 6px; }
+.cost-shortcut { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; padding: 6px 10px; border: 1px solid #d6dfd8; border-radius: 8px; color: #294c3f; background: #fff; font-size: 14px; line-height: 20px; white-space: nowrap; }
+.cost-shortcut:hover { background: #edf4ef; border-color: #739981; }
+.cost-shortcut:focus-visible { outline: 2px solid #517761; outline-offset: 2px; }
+.cost-shortcut svg { flex-shrink: 0; }
 .cost-styles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .cost-style { display: flex; align-items: center; gap: 12px; padding: 16px; border: 1px solid #d6dfd8; border-radius: 12px; background: #f6f8f4; color: #294c3f; min-width: 0; }
 .cost-style span { flex: 1; }
