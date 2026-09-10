@@ -1280,3 +1280,26 @@ textarea {
 .inspiration-card .dest-copy { right: 18px; }
 .inspiration-card .dest-copy p { font-size: 14px; }
 .inspiration-card:focus-visible { outline: 3px solid #70a588; outline-offset: -3px; }
+
+/* Cost comparison reuses the planner's green surfaces and compact controls. */
+.trip-cost-entry { margin: 24px 0; }
+.trip-cost-entry .section-heading { margin: 0 0 14px; flex-wrap: wrap; gap: 8px; }
+.cost-styles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.cost-style { display: flex; align-items: center; gap: 12px; padding: 16px; border: 1px solid #d6dfd8; border-radius: 12px; background: #f6f8f4; color: #294c3f; min-width: 0; }
+.cost-style span { flex: 1; }
+.cost-style svg { flex-shrink: 0; }
+.cost-style strong, .cost-style small { display: block; }
+.cost-style small { font-size: 14px; color: #5c6c62; margin-top: 4px; }
+.cost-style:hover, .cost-style.selected { background: #e1eddf; border-color: #517761; }
+.cost-style:focus-visible { outline: 3px solid #517761; outline-offset: 3px; }
+.cost-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 24px 0; }
+.cost-total { background: #ecf2e9; }
+.cost-total h2 { font-family: Georgia, serif; font-size: clamp(25px, 3vw, 38px); margin: 20px 0 12px; overflow-wrap: anywhere; }
+.cost-total .form-note { margin-top: 24px; }
+.cost-rows { margin: 12px 0 0; }
+.cost-rows div { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 14px 0; border-bottom: 1px solid #e1e6df; }
+.cost-rows dd { font-weight: 600; font-variant-numeric: tabular-nums; }
+.cost-page select { border: 1px solid #cbd5cb; border-radius: 8px; padding: 10px 12px; background: white; font: inherit; }
+.cost-assumptions .field { max-width: 280px; margin: 16px 0; }
+.cost-assumptions p { margin-top: 12px; }
+@media (max-width: 700px) { .cost-styles { gap: 7px; } .cost-style { padding: 12px 8px; flex-direction: column; text-align: center; } .cost-style small { font-size: 14px; } .cost-layout { grid-template-columns: 1fr; } .cost-page .page-heading { flex-wrap: wrap; gap: 18px; } }

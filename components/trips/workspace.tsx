@@ -52,6 +52,7 @@ import { sampleTrip } from "@/lib/trips/sample";
 import { getPackingCues, getTripSignature } from "@/lib/trips/insights";
 import { DestinationStays, StayFinder } from "@/components/trips/stay-finder";
 import { DestinationCarousel } from "@/components/trips/destination-carousel";
+import { TripCostLinks } from "@/components/trips/trip-cost";
 import type { Trip, Intake } from "@/lib/trips/schema";
 const interests = [
   { name: "Nature", icon: Leaf },
@@ -303,6 +304,7 @@ export function Workspace({
               </span>
             </div>
           </div>
+          <TripCostLinks input={trip.intake} />
           <div className="planner-layout">
             <div className="trip-days">
               {trip.itinerary.days.map((day, i) => (
@@ -483,6 +485,7 @@ export function Workspace({
                     values={["Budget", "Comfort", "Luxury"]}
                     onChange={(v) => update("budget", v as Intake["budget"])}
                   />
+                  <div className="wide"><TripCostLinks input={form} /></div>
                   <div className="field wide">
                     What do you love?
                     <div className="interests">
