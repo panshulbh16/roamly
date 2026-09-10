@@ -83,3 +83,34 @@ test("renders sidebar skeletons deterministically", async () => {
   assert.equal(first, second);
   assert.match(first, /--skeleton-width:70%/);
 });
+
+test("destination stays follow current or saved input and hide for empty destinations", async () => {
+  const { DestinationStays } = await vite.ssrLoadModule("/components/trips/stay-finder.tsx");
+  for (const destination of ["", "   "]) {
+    assert.equal(renderToStaticMarkup(React.createElement(DestinationStays, { destination })), "");
+  }
+  for (const destination of ["Goa, India", "Kyoto, Japan", "Tórshavn, Faroe Islands", "京都 日本", '<script>alert("x")</script>']) {
+    const html = renderToStaticMarkup(React.createElement(DestinationStays, { destination }));
+    assert.ok(html.includes(`href="https://www.airbnb.com/s/homes?query=${encodeURIComponent(destination)}"`));
+    assert.match(html, /target="_blank"/);
+    assert.match(html, /rel="noopener noreferrer"/);
+    assert.match(html, /Choose dates and guests there/);
+    assert.doesNotMatch(html, /<script>/);
+  }
+});
+
+test("stay finder has a working native Airbnb search, labeled filter and bounded initial directory", async () => {
+  const { StayFinder } = await vite.ssrLoadModule("/components/trips/stay-finder.tsx");
+  const html = renderToStaticMarkup(React.createElement(StayFinder));
+  assert.match(html, /action="https:\/\/www.airbnb.com\/s\/homes"/);
+  assert.match(html, /method="get"/);
+  assert.match(html, /name="query"/);
+  assert.match(html, /for="stay-destination"/);
+  assert.match(html, /aria-labelledby="stay-country-label"/);
+  assert.match(html, /disabled="" type="submit"/);
+  assert.match(html, /role="status"/);
+  assert.match(html, /240 destination shortcuts across 24 countries/);
+  assert.equal((html.match(/class="stay-column"/g) ?? []).length, 6);
+  assert.equal((html.match(/aria-label="Find Airbnb stays in /g) ?? []).length, 60);
+  assert.match(html, /Show all 24 countries/);
+});

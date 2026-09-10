@@ -67,3 +67,15 @@ Run `node --test tests/auth-history.test.mjs` for real route-handler tests again
 GitHub Actions runs TypeScript, lint, the production build, all Node tests, and SQLite storage tests on Linux and macOS for pushes and pull requests. No provider secrets are needed; paid live tests remain opt-in. Locally, run `npm ci`, `npm test`, `npx tsc --noEmit`, `npm run lint`, and `python3 tests/storage_test.py`.
 
 The build timeout uses Node and works on macOS without GNU coreutils. It defaults to three minutes; override with `SITES_BUILD_TIMEOUT=5m npm run build`. A timed-out build exits with status 124.
+
+## Airbnb stay finder
+
+Typing any trip destination immediately offers an Airbnb results link. The itinerary view, including reopened saved trips, uses that trip’s destination. No AI generation or Airbnb credentials are needed. Actual properties are displayed on Airbnb, where the traveler selects dates and guests; Roamly does not embed, scrape, rank, or claim availability of individual listings.
+
+Plan and Explore also have an independent worldwide search plus 240 destination shortcuts in 24 country columns. The directory supports country filtering and case/accent-insensitive search. Places outside the directory still work through the free-text Airbnb search. The country filter affects the directory only. Country-qualified shortcuts reduce ambiguous location matches, but Airbnb ultimately resolves the query.
+
+The public `/s/homes?query=` link behavior was checked in Airbnb’s browser interface on 2026-09-10, including a Japanese-language destination. It is a redirect integration, not an API contract. If Airbnb changes its search URLs, update `airbnbSearchUrl` and the search form action together. `tests/stays.test.mjs` covers directory entries, filtering and query encoding; component tests cover contextual links and the search form.
+
+## Trip DNA and packing cues
+
+The planner shows a trip signature based on interests, duration, pace and budget; itinerary views derive it from the saved intake. Packing cues reflect interests and prioritize accessibility notes when requested. These are simple planning suggestions, not destination-specific packing or accessibility verification. Tests cover all interest combinations, supported durations and practical needs.

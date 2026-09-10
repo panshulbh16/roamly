@@ -38,6 +38,7 @@ export function AppShell({
   const name = user?.displayName ?? "Guest";
   return (
     <SidebarProvider
+      key={path}
       style={{ "--sidebar-width": "225px" } as React.CSSProperties}
     >
       <Sidebar>

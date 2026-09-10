@@ -49,6 +49,8 @@ import {
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { destinations, sampleTrip } from "@/lib/trips/sample";
+import { getPackingCues, getTripSignature } from "@/lib/trips/insights";
+import { DestinationStays, StayFinder } from "@/components/trips/stay-finder";
 import type { Trip, Intake } from "@/lib/trips/schema";
 const interests = [
   { name: "Nature", icon: Leaf },
@@ -105,6 +107,7 @@ function Choice({
     </label>
   );
 }
+
 export function Workspace({
   view = "plan",
   aiReady = false,
@@ -264,6 +267,7 @@ export function Workspace({
       ))}
     </div>
   );
+  const signature = getTripSignature(trip?.intake ?? form);
   return (
     <main className="workspace">
       <Toaster richColors />
@@ -358,12 +362,31 @@ export function Workspace({
               ))}
             </div>
             <aside className="panel">
+              <div className="signature-card">
+                <span className="eyebrow">ROAMLY DNA</span>
+                <h2>{signature.name}</h2>
+                <p>{signature.line}</p>
+                <div className="signature-signals">
+                  {signature.signals.map((signal) => (
+                    <span key={signal}>{signal}</span>
+                  ))}
+                </div>
+              </div>
+              <DestinationStays destination={trip.intake.destination} />
               <h2 className="aside-title">Before you go</h2>
               {trip.itinerary.tips.map((t, i) => (
                 <p className="subtext" style={{ marginBottom: 16 }} key={i}>
                   {t}
                 </p>
               ))}
+              <div className="small-tip packing-tip">
+                <strong>Pack for your rhythm</strong>
+                <ul>
+                  {getPackingCues(trip.intake).map((cue) => (
+                    <li key={cue}>{cue}</li>
+                  ))}
+                </ul>
+              </div>
               <div className="small-tip">
                 <strong>Make it yours</strong>Use the pencil beside an activity
                 to adjust your plan. Save again to keep your changes.
@@ -428,6 +451,9 @@ export function Workspace({
                       />
                     </span>
                   </label>
+                  <div className="wide">
+                    <DestinationStays destination={form.destination} />
+                  </div>
                   <label className="field">
                     When are you going?
                     <input
@@ -552,7 +578,17 @@ export function Workspace({
               </form>
             </section>
             <aside className="planner-aside">
-              <div className="panel">
+              <div className="signature-card">
+                  <span className="eyebrow">ROAMLY DNA</span>
+                  <h2>{signature.name}</h2>
+                  <p>{signature.line}</p>
+                  <div className="signature-signals">
+                    {signature.signals.map((signal) => (
+                      <span key={signal}>{signal}</span>
+                    ))}
+                  </div>
+              </div>
+              <div className="panel planner-benefits">
                 <h2 className="aside-title">Not just a trip. Your trip.</h2>
                 <div className="benefit">
                   <Heart />
@@ -581,7 +617,7 @@ export function Workspace({
                   Making it your own.”
                 </div>
               </div>
-              <div className="small-tip">
+              <div className="small-tip planner-inspiration">
                 <strong>
                   <Sparkles
                     size={14}
@@ -607,6 +643,7 @@ export function Workspace({
             </Link>
           </div>
           {cards}
+          <StayFinder />
           <button
             className="text-button"
             style={{ marginTop: 18 }}
@@ -726,6 +763,7 @@ export function Workspace({
             </div>
           </div>
           {cards}
+          <StayFinder />
           <section className="panel" style={{ marginTop: 25 }}>
             <span className="eyebrow">A CLOSER LOOK</span>
             <h2 className="trip-title">Three days, a little Kyoto.</h2>
