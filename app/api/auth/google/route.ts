@@ -9,12 +9,16 @@ import {
 import { requiredClient } from "@/lib/auth/requests";
 import { safeReturnTo } from "@/lib/auth/policy";
 import { authCookieOptions } from "@/lib/auth/config";
+import { z } from "zod";
 export async function POST(r: Request) {
   try {
     sameOrigin(r);
     const c = await requiredClient();
-    const data = await body(r);
-    const returnTo = safeReturnTo(data.returnTo);
+    const parsed = z
+      .object({ returnTo: z.string().optional() })
+      .safeParse(await body(r));
+    if (!parsed.success) throw new ApiError(400, "Please try signing in again.");
+    const returnTo = safeReturnTo(parsed.data.returnTo);
     (await cookies()).set("roamly-auth-return", returnTo, {
       ...authCookieOptions,
       maxAge: 600,

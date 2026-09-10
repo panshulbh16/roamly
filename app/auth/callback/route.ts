@@ -20,6 +20,13 @@ export async function GET(r: Request) {
       return Response.redirect(new URL(target, r.url), 303);
     }
   }
+  const target = safeReturnTo(jar.get("roamly-auth-return")?.value);
   jar.delete("roamly-auth-return");
-  return Response.redirect(new URL("/auth?error=callback", r.url), 303);
+  return Response.redirect(
+    new URL(
+      "/auth?error=callback&returnTo=" + encodeURIComponent(target),
+      r.url,
+    ),
+    303,
+  );
 }

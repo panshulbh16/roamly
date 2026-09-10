@@ -1,4 +1,5 @@
 import { z } from "zod";
+const text = z.string().trim().min(1);
 export const intakeSchema = z.object({
   destination: z.string().trim().min(2).max(120),
   startDate: z
@@ -23,19 +24,19 @@ export const intakeSchema = z.object({
   homeCity: z.string().max(100),
 });
 export const itinerarySchema = z.object({
-  title: z.string().max(160),
-  summary: z.string().max(1000),
+  title: text.max(160),
+  summary: text.max(1000),
   days: z
     .array(
       z.object({
-        title: z.string().max(160),
+        title: text.max(160),
         activities: z
           .array(
             z.object({
-              time: z.string().max(30),
-              title: z.string().max(160),
-              description: z.string().max(800),
-              place: z.string().max(160),
+              time: text.max(30),
+              title: text.max(160),
+              description: text.max(800),
+              place: text.max(160),
             }),
           )
           .min(1)
@@ -44,7 +45,7 @@ export const itinerarySchema = z.object({
     )
     .min(1)
     .max(10),
-  tips: z.array(z.string().max(500)).max(8),
+  tips: z.array(text.max(500)).max(8),
 });
 export const tripSchema = z.object({
   id: z.string().uuid(),

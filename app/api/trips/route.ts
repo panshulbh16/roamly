@@ -8,6 +8,7 @@ import {
   ApiError,
 } from "@/lib/server/context";
 import { tripSchema } from "@/lib/trips/schema";
+import { z } from "zod";
 export async function GET() {
   try {
     const u = await identity();
@@ -61,12 +62,12 @@ export async function DELETE(r: Request) {
   try {
     sameOrigin(r);
     const u = await identity();
-    const data = await body(r);
-    if (typeof data.id !== "string")
+    const parsed = z.object({ id: z.string().uuid() }).safeParse(await body(r));
+    if (!parsed.success)
       throw new ApiError(400, "Choose a trip to delete.");
     await db()
       .prepare("DELETE FROM trips WHERE id=? AND owner=?")
-      .bind(data.id, u.id)
+      .bind(parsed.data.id, u.id)
       .run();
     return Response.json({ deleted: true }, { headers: privateHeaders });
   } catch (e) {

@@ -1021,12 +1021,15 @@ textarea {
   }
 }
 @media print {
-  aside,
-  header,
+  [data-slot="sidebar"],
+  .topbar,
+  .planner-aside,
   .trip-actions,
-  .footer,
-  .topbar {
+  .footer {
     display: none !important;
+  }
+  .itinerary-aside {
+    display: block !important;
   }
   .workspace {
     padding: 0;

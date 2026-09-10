@@ -129,6 +129,7 @@ export function Workspace({
     activity: number;
     title: string;
     description: string;
+    place: string;
   } | null>(null);
   const [joined, setJoined] = useState(false);
   function update<K extends keyof Intake>(key: K, value: Intake[K]) {
@@ -148,44 +149,58 @@ export function Workspace({
   useEffect(() => {
     let task: number | undefined;
     let historyTask: number | undefined;
-    let destinationTask: number | undefined;
+    let cancelled = false;
     if (view === "trips")
       task = window.setTimeout(() => void load(), 0);
     if (view === "plan") {
       const historyId = searchParams.get("history");
-      if (historyId) {
+      const destination = searchParams.get("destination");
+      if (!historyId && !destination) {
+        queueMicrotask(() => {
+          if (cancelled) return;
+          setTrip(null);
+          setError("");
+          setBusy(false);
+          setForm(initial);
+          setExtra(false);
+          setEdit(null);
+        });
+      } else if (historyId) {
         historyTask = window.setTimeout(() => {
           setBusy(true);
           api("/api/history?id=" + encodeURIComponent(historyId))
             .then(({ entry }) => {
+              if (cancelled) return;
               setForm(entry.intake);
               setTrip(entry.trip);
               setExtra(true);
             })
-            .catch((e) => setError(e.message))
-            .finally(() => setBusy(false));
+            .catch((e) => {
+              if (!cancelled) setError(e.message);
+            })
+            .finally(() => {
+              if (!cancelled) setBusy(false);
+            });
         }, 0);
+      } else {
+        queueMicrotask(() => {
+          if (cancelled) return;
+          setTrip(null);
+          setError("");
+          setBusy(false);
+          setExtra(false);
+          setEdit(null);
+          setForm((f) => ({
+            ...f,
+            destination: destination!.slice(0, 120),
+          }));
+        });
       }
-      const destination = searchParams.get("destination");
-      const nextDestination = destination
-        ? destination.slice(0, 120)
-        : historyId
-          ? null
-          : "";
-      if (nextDestination !== null)
-        destinationTask = window.setTimeout(
-          () =>
-            setForm((f) => ({
-              ...f,
-              destination: nextDestination,
-            })),
-          0,
-        );
     }
     return () => {
+      cancelled = true;
       if (task !== undefined) window.clearTimeout(task);
       if (historyTask !== undefined) window.clearTimeout(historyTask);
-      if (destinationTask !== undefined) window.clearTimeout(destinationTask);
     };
   }, [searchParams, view]);
   async function generate(e: React.FormEvent) {
@@ -338,6 +353,7 @@ export function Workspace({
                               activity: j,
                               title: a.title,
                               description: a.description,
+                              place: a.place,
                             })
                           }
                         >
@@ -361,7 +377,7 @@ export function Workspace({
                 </section>
               ))}
             </div>
-            <aside className="panel">
+            <aside className="panel itinerary-aside">
               <div className="signature-card">
                 <span className="eyebrow">ROAMLY DNA</span>
                 <h2>{signature.name}</h2>
@@ -932,6 +948,9 @@ export function Workspace({
                   copy.itinerary.days[edit.day].activities[
                     edit.activity
                   ].description = edit.description;
+                  copy.itinerary.days[edit.day].activities[
+                    edit.activity
+                  ].place = edit.place;
                   return copy;
                 });
                 setEdit(null);
@@ -956,6 +975,15 @@ export function Workspace({
                   onChange={(e) =>
                     setEdit({ ...edit, description: e.target.value })
                   }
+                />
+              </label>
+              <label className="field" style={{ marginTop: 15 }}>
+                Location
+                <input
+                  required
+                  maxLength={160}
+                  value={edit.place}
+                  onChange={(e) => setEdit({ ...edit, place: e.target.value })}
                 />
               </label>
               <button className="primary" style={{ marginTop: 20 }}>

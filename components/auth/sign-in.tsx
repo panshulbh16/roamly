@@ -224,14 +224,23 @@ export function SignIn({
             </div>
           )}
           {!user && (
-            <a
-              className="secondary-button"
-              style={{ marginTop: 20, width: "100%", justifyContent: "center" }}
-              href={"/auth/platform?returnTo=" + encodeURIComponent(returnTo)}
+            <form
+              method="post"
+              action={"/auth/platform?returnTo=" + encodeURIComponent(returnTo)}
               target="_top"
             >
-              Continue with ChatGPT <ArrowRight size={16} />
-            </a>
+              <button
+                className="secondary-button"
+                style={{
+                  marginTop: 20,
+                  width: "100%",
+                  justifyContent: "center",
+                }}
+                type="submit"
+              >
+                Continue with ChatGPT <ArrowRight size={16} />
+              </button>
+            </form>
           )}
         </div>
         <p className="form-note">

@@ -111,7 +111,7 @@ export class AnthropicPlanner implements PlannerProvider {
         "The planning service returned an incomplete response. Please try again.",
       );
     }
-    if (!Array.isArray(data.content))
+    if (!data || typeof data !== "object" || !Array.isArray(data.content))
       throw new ApiError(
         502,
         "The planning service returned an incomplete response. Please try again.",
@@ -119,8 +119,8 @@ export class AnthropicPlanner implements PlannerProvider {
     if (data.stop_reason === "max_tokens")
       throw new ApiError(502, "This itinerary was too long. Try fewer days.");
     const raw = data.content
-      .filter((c) => c.type === "text")
-      .map((c) => c.text ?? "")
+      .filter((c) => c && typeof c === "object" && c.type === "text")
+      .map((c) => (typeof c.text === "string" ? c.text : ""))
       .join("");
     if (!raw.trim())
       throw new ApiError(
