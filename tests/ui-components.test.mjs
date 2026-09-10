@@ -114,3 +114,15 @@ test("stay finder has a working native Airbnb search, labeled filter and bounded
   assert.equal((html.match(/aria-label="Find Airbnb stays in /g) ?? []).length, 60);
   assert.match(html, /Show all 24 countries/);
 });
+
+test("inspiration carousel includes distinct destinations, accessible controls and encoded planner links", async () => {
+  const { DestinationCarousel, inspiration } = await vite.ssrLoadModule('/components/trips/destination-carousel.tsx');
+  const html = renderToStaticMarkup(React.createElement(DestinationCarousel));
+  assert.equal(inspiration.length, 12);
+  assert.equal(new Set(inspiration.map(d => d.name)).size, 12);
+  for (const d of inspiration) assert.ok(html.includes(`href="/?destination=${encodeURIComponent(d.name + ', ' + d.country)}"`));
+  assert.match(html, /Destination inspiration/);
+  assert.match(html, /Previous slide/);
+  assert.match(html, /Next slide/);
+  assert.equal((html.match(/loading="lazy"/g) ?? []).length, 3);
+});

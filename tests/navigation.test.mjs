@@ -24,3 +24,16 @@ test('route changes reset the open itinerary and mobile sidebar together', () =>
   assert.equal(AppShell({ user: null, children: null }).key, shells[1].key);
 });
 test.after(() => { delete globalThis.__roamlyNavigationTest; });
+
+test('main navigation prefetches its four routes', () => {
+  const shell = AppShell({ user: null, children: null });
+  const links = [];
+  function visit(node) {
+    if (Array.isArray(node)) return node.forEach(visit);
+    if (!node || typeof node !== 'object') return;
+    if (node.props?.prefetch === true) links.push(node.props.href);
+    visit(node.props?.children);
+  }
+  visit(shell);
+  assert.deepEqual(links, ['/', '/trips', '/history', '/explore']);
+});

@@ -48,9 +48,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
-import { destinations, sampleTrip } from "@/lib/trips/sample";
+import { sampleTrip } from "@/lib/trips/sample";
 import { getPackingCues, getTripSignature } from "@/lib/trips/insights";
 import { DestinationStays, StayFinder } from "@/components/trips/stay-finder";
+import { DestinationCarousel } from "@/components/trips/destination-carousel";
 import type { Trip, Intake } from "@/lib/trips/schema";
 const interests = [
   { name: "Nature", icon: Leaf },
@@ -259,29 +260,7 @@ export function Workspace({
     setError("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
-  const cards = (
-    <div className="destination-grid">
-      {destinations.map((d) => (
-        <Link
-          href={`/?destination=${encodeURIComponent(d.name + ", " + d.country)}`}
-          className="destination-card"
-          key={d.name}
-        >
-          <img src={d.image} alt={`${d.name}, ${d.country}`} loading="lazy" />
-          <span className="dest-badge">{d.tag}</span>
-          <div className="dest-copy">
-            <h3>
-              {d.name}
-              <span style={{ fontSize: 12, fontWeight: 400, marginLeft: 7 }}>
-                {d.country}
-              </span>
-            </h3>
-            <p>{d.detail}</p>
-          </div>
-        </Link>
-      ))}
-    </div>
-  );
+  const cards = <DestinationCarousel />;
   const signature = getTripSignature(trip?.intake ?? form);
   return (
     <main className="workspace">

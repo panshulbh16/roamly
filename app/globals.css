@@ -1272,3 +1272,11 @@ textarea {
     gap: 8px;
   }
 }
+
+.inspiration-carousel { min-width: 0; }
+.inspiration-controls { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-bottom: 14px; }
+.inspiration-controls span { margin-right: auto; font-size: 14px; color: #67716e; }
+.inspiration-card { display: block; height: 220px; background: linear-gradient(135deg, #27463c, #365f76); }
+.inspiration-card .dest-copy { right: 18px; }
+.inspiration-card .dest-copy p { font-size: 14px; }
+.inspiration-card:focus-visible { outline: 3px solid #70a588; outline-offset: -3px; }

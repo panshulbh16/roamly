@@ -58,6 +58,7 @@ export function AppShell({
                 className={path === n.href ? "active" : ""}
                 key={n.href}
                 href={n.href}
+                prefetch={true}
               >
                 <n.icon />
                 {n.label}
