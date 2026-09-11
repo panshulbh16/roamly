@@ -53,6 +53,7 @@ import { getPackingCues, getTripSignature } from "@/lib/trips/insights";
 import { DestinationStays, StayFinder } from "@/components/trips/stay-finder";
 import { DestinationCarousel } from "@/components/trips/destination-carousel";
 import { TripCostLinks } from "@/components/trips/trip-cost";
+import { DestinationAdvice } from "@/components/trips/destination-advice";
 import type { Trip, Intake } from "@/lib/trips/schema";
 const interests = [
   { name: "Nature", icon: Leaf },
@@ -305,6 +306,7 @@ export function Workspace({
             </div>
           </div>
           <TripCostLinks input={trip.intake} />
+          <DestinationAdvice advice={trip.itinerary.destinationAdvice} destination={trip.intake.destination} />
           <div className="planner-layout">
             <div className="trip-days">
               {trip.itinerary.days.map((day, i) => (

@@ -126,3 +126,21 @@ test("inspiration carousel includes distinct destinations, accessible controls a
   assert.match(html, /Next slide/);
   assert.equal((html.match(/loading="lazy"/g) ?? []).length, 3);
 });
+
+test("destination advice renders both sides, escapes text and preserves legacy trips", async () => {
+  const { DestinationAdvice } = await vite.ssrLoadModule('/components/trips/destination-advice.tsx');
+  const { destinationAdviceSchema, tripSchema } = await vite.ssrLoadModule('/lib/trips/schema.ts');
+  const { sampleTrip } = await vite.ssrLoadModule('/lib/trips/sample.ts');
+  const advice = { highlights: ['Temple gardens reward early starts.', 'Walkable historic streets.'], watchOutFor: ['Popular temples get crowded; arrive early.', '<script>bad</script>'] };
+  assert.equal(destinationAdviceSchema.safeParse(advice).success, true);
+  for (const invalid of [{...advice,highlights:[]},{...advice,watchOutFor:[' ']},{...advice,watchOutFor:['x'.repeat(301),'ok']}]) assert.equal(destinationAdviceSchema.safeParse(invalid).success,false);
+  const html = renderToStaticMarkup(React.createElement(DestinationAdvice, {advice,destination:'Kyoto'}));
+  assert.match(html, /What you’ll love/);
+  assert.match(html, /Plan around these/);
+  assert.match(html, /arrive early/);
+  assert.doesNotMatch(html, /<script>/);
+  assert.equal(renderToStaticMarkup(React.createElement(DestinationAdvice, {destination:'Kyoto'})), '');
+  assert.equal(tripSchema.safeParse(sampleTrip).success,true);
+  const saved = tripSchema.parse({...sampleTrip,itinerary:{...sampleTrip.itinerary,destinationAdvice:advice}});
+  assert.deepEqual(tripSchema.parse(JSON.parse(JSON.stringify(saved))).itinerary.destinationAdvice,advice);
+});

@@ -1,5 +1,9 @@
 import { z } from "zod";
 const text = z.string().trim().min(1);
+export const destinationAdviceSchema = z.object({
+  highlights: z.array(text.max(300)).min(2).max(3),
+  watchOutFor: z.array(text.max(300)).min(2).max(3),
+});
 export const intakeSchema = z.object({
   destination: z.string().trim().min(2).max(120),
   startDate: z
@@ -46,6 +50,7 @@ export const itinerarySchema = z.object({
     .min(1)
     .max(10),
   tips: z.array(text.max(500)).max(8),
+  destinationAdvice: destinationAdviceSchema.optional(),
 });
 export const tripSchema = z.object({
   id: z.string().uuid(),

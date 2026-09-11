@@ -8,7 +8,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const vite = await createServer({ appType: 'custom', configFile: false, root, resolve: { alias: { '@': root } }, server: { middlewareMode: true } });
 after(() => vite.close());
 const cost = await vite.ssrLoadModule('/lib/trips/cost.ts');
-const input = { destination: 'Kyoto, Japan', days: 3, travelers: 2, budget: 'Comfort' };
+const input = { destination: 'Kyoto, Japan', startDate: '2026-12-20', days: 3, travelers: 2, budget: 'Comfort' };
 test('all days, travelers, styles and cost bands produce finite reconciled totals', () => {
   for (let days = 1; days <= 10; days++) for (let travelers = 1; travelers <= 10; travelers++) for (const band of cost.bands) {
     let previous = 0;
@@ -82,7 +82,12 @@ test('style cards keep unsaved planner open and cost page exposes assumptions ac
   assert.equal((links.match(/width="16"/g) ?? []).length, 3);
   assert.doesNotMatch(links, /<h2|<small|What could your trip cost|Simple stays/);
   for (const style of cost.styles) assert.ok(links.includes(`budget=${style}`));
-  assert.equal(renderToStaticMarkup(React.createElement(TripCostLinks, { input: { ...input, destination: '' } })), '');
+  for (const patch of [{ destination: '' }, { startDate: '' }, { startDate: '2026-02-30' }]) {
+    const disabled = renderToStaticMarkup(React.createElement(TripCostLinks, { input: { ...input, ...patch } }));
+    assert.equal((disabled.match(/disabled=""/g) ?? []).length, 3);
+    assert.doesNotMatch(disabled, /href=/);
+    assert.match(disabled, /Add a destination and departure date first/);
+  }
   const page = renderToStaticMarkup(React.createElement(CostBreakdown, { input }));
   assert.match(page, /aria-current="page"/);
   assert.match(page, /Display currency/);
@@ -91,4 +96,36 @@ test('style cards keep unsaved planner open and cost page exposes assumptions ac
   assert.match(page, /Flights, intercity travel/);
   assert.match(page, /Loading estimate/);
   assert.match(page, /&amp;band=Mid%20cost/);
+});
+
+test('57,600 planner filter combinations retain dates and validate cost inputs', async () => {
+  const { intakeSchema } = await vite.ssrLoadModule('/lib/trips/schema.ts');
+  const interests = ['Nature', 'Food', 'Culture', 'Adventure', 'Photography', 'Relaxation'];
+  let count = 0;
+  for (let days = 1; days <= 10; days++) for (let travelers = 1; travelers <= 10; travelers++)
+    for (const budget of cost.styles) for (const pace of ['Relaxed', 'Balanced', 'Packed'])
+      for (let mask = 0; mask < 64; mask++) {
+        const form = { ...input, days, travelers, budget, pace, interests: interests.filter((_, i) => mask & (1 << i)), needs: '', homeCity: '' };
+        assert.equal(intakeSchema.safeParse(form).success, true);
+        const query = Object.fromEntries(new URL(cost.costUrl(form), 'http://localhost').searchParams);
+        assert.deepEqual(cost.costInputSchema.parse(query), { destination: input.destination, startDate: input.startDate, days, travelers, budget });
+        count++;
+      }
+  assert.equal(count, 57600);
+});
+test('calendar boundary and missing-date cases cannot produce an estimate', () => {
+  for (const startDate of ['', undefined, '2026-02-29', '2026-04-31', '2026-13-01', '2026-00-01', 'not-a-date']) {
+    assert.equal(cost.costInputSchema.safeParse({ ...input, startDate }).success, false);
+    assert.throws(() => cost.estimateCost({ ...input, startDate }, 'Mid cost'));
+  }
+  for (const startDate of ['2028-02-29', '2026-12-31', '2027-01-01']) {
+    const url = new URL(cost.costUrl({ ...input, startDate }), 'http://localhost');
+    assert.equal(cost.costInputSchema.parse(Object.fromEntries(url.searchParams)).startDate, startDate);
+  }
+});
+test('all selectable currencies format bounded estimates without crashing', () => {
+  for (const currency of cost.currencies) {
+    const formatter = new Intl.NumberFormat('en', { style: 'currency', currency, maximumFractionDigits: 0 });
+    assert.ok(formatter.format(1234567).length > 0);
+  }
 });

@@ -12,9 +12,10 @@ const compiled=await build({entryPoints:['tests/auth-history-entry.ts'],bundle:t
 const app=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text).toString('base64'));
 const input={destination:'Auckland',startDate:'',days:5,travelers:2,budget:'Comfort',pace:'Balanced',interests:['Nature'],needs:'',homeCity:''};
 const origin='https://roamly.test';
+const destinationAdvice={highlights:['Harbour walks offer waterfront views.','Volcanic viewpoints provide city panoramas.'],watchOutFor:['Hills can be steep; choose accessible routes.','Weather changes quickly; carry a rain layer.']};
 test('planner sends optional workspace header and validates the provider itinerary',async()=>{
   const originalFetch=globalThis.fetch;
-  const itinerary={title:'Auckland',summary:'A short visit',days:[{title:'Day 1',activities:[{time:'Morning',title:'Walk',description:'Explore the waterfront',place:'Auckland'}]}],tips:[]};
+  const itinerary={title:'Auckland',summary:'A short visit',days:[{title:'Day 1',activities:[{time:'Morning',title:'Walk',description:'Explore the waterfront',place:'Auckland'}]}],tips:[],destinationAdvice};
   context.env.ANTHROPIC_API_KEY='fixture-key';
   context.env.ANTHROPIC_MODEL='fixture-model';
   context.env.AI_MONTHLY_REQUEST_LIMIT='100';
@@ -28,11 +29,16 @@ test('planner sends optional workspace header and validates the provider itinera
         assert.equal(headers.get('anthropic-workspace-id'),workspace??null);
         assert.equal(headers.get('x-api-key'),'fixture-key');
         assert.equal(JSON.parse(options.body).model,'fixture-model');
-        assert.equal(JSON.parse(options.body).max_tokens,4500);
+        assert.equal(JSON.parse(options.body).max_tokens,5000);
+        assert.match(JSON.parse(options.body).system,/destinationAdvice/);
         assert.match(JSON.parse(options.body).system,/exactly the requested number of days/);
         return Response.json({content:[{type:'text',text:JSON.stringify(itinerary)}],stop_reason:'end_turn'});
       };
       assert.deepEqual(await new app.planner.AnthropicPlanner().generate({...input,days:1}),itinerary);
+    }
+    for (const advice of [undefined, {highlights: [], watchOutFor: []}]) {
+      globalThis.fetch=async()=>Response.json({content:[{type:'text',text:JSON.stringify({...itinerary,destinationAdvice:advice})}],stop_reason:'end_turn'});
+      await assert.rejects(()=>new app.planner.AnthropicPlanner().generate({...input,days:1}),/validate this itinerary/);
     }
   } finally {
     globalThis.fetch=originalFetch;
@@ -145,6 +151,7 @@ test('provider itineraries for every supported day count are accepted',async()=>
       summary:'Fixture itinerary',
       days:Array.from({length:requested},(_,i)=>({title:`Day ${i+1}`,activities:[{time:'Morning',title:'Walk',description:'A short walk.',place:'Local area'}]})),
       tips:[],
+      destinationAdvice,
     })}],stop_reason:'end_turn'});
   };
   try {

@@ -1,9 +1,11 @@
 import { z } from "zod";
+import { intakeSchema } from "./schema";
 import { stayCollections } from "./stays";
 
 export const styles = ["Budget", "Comfort", "Luxury"] as const;
 export const costInputSchema = z.object({
   destination: z.string().trim().min(2).max(120),
+  startDate: intakeSchema.shape.startDate.refine(value => value.length > 0, "Choose a departure date"),
   days: z.coerce.number().int().min(1).max(10),
   travelers: z.coerce.number().int().min(1).max(10),
   budget: z.enum(styles),
@@ -41,7 +43,7 @@ export function estimateCost(input: CostInput, band: CostBand) {
   return { rows: [...rows, buffer], low: subtotal.low + buffer.low, high: subtotal.high + buffer.high, nights, rooms };
 }
 export function costUrl(input: CostInput, budget = input.budget) {
-  return "/cost?" + new URLSearchParams({ destination: input.destination, days: String(input.days), travelers: String(input.travelers), budget }).toString();
+  return "/cost?" + new URLSearchParams({ destination: input.destination, startDate: input.startDate, days: String(input.days), travelers: String(input.travelers), budget }).toString();
 }
 export const currencies = Intl.supportedValuesOf("currency");
 export function currencyForCountry(country: string | undefined) {
