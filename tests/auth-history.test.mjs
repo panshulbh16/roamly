@@ -17,7 +17,7 @@ test('planner sends optional workspace header and validates the provider itinera
   const originalFetch=globalThis.fetch;
   const itinerary={title:'Auckland',summary:'A short visit',days:[{title:'Day 1',activities:[{time:'Morning',title:'Walk',description:'Explore the waterfront',place:'Auckland'}]}],tips:[],destinationAdvice};
   context.env.ANTHROPIC_API_KEY='fixture-key';
-  context.env.ANTHROPIC_MODEL='fixture-model';
+  context.env.ANTHROPIC_MODEL='claude-opus-5';
   context.env.AI_MONTHLY_REQUEST_LIMIT='100';
   try {
     for(const workspace of [undefined,'wrkspc_fixture']) {
@@ -28,7 +28,8 @@ test('planner sends optional workspace header and validates the provider itinera
         const headers=new Headers(options.headers);
         assert.equal(headers.get('anthropic-workspace-id'),workspace??null);
         assert.equal(headers.get('x-api-key'),'fixture-key');
-        assert.equal(JSON.parse(options.body).model,'fixture-model');
+        assert.equal(JSON.parse(options.body).model,'claude-opus-5');
+        assert.deepEqual(JSON.parse(options.body).output_config,{effort:'low'});
         assert.equal(JSON.parse(options.body).max_tokens,5000);
         assert.match(JSON.parse(options.body).system,/destinationAdvice/);
         assert.match(JSON.parse(options.body).system,/exactly the requested number of days/);

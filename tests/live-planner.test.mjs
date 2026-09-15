@@ -42,12 +42,15 @@ test('live Opus itineraries survive reopening History in an isolated database', 
   const input={startDate:'',days:1,travelers:2,budget:'Comfort',pace:'Balanced',interests:['Nature'],needs:'',homeCity:''};
   const generated=[];
   try {
-    for(const destination of ['Auckland','Austria']) {
-      const response=await app.generate.POST(new Request(origin+'/api/generate',{method:'POST',headers:{origin,'Content-Type':'application/json'},body:JSON.stringify({...input,destination})}));
+    for(const [destination,days] of [['Auckland',1],['Austria',10]]) {
+      const started=performance.now();
+      const response=await app.generate.POST(new Request(origin+'/api/generate',{method:'POST',headers:{origin,'Content-Type':'application/json'},body:JSON.stringify({...input,destination,days})}));
       const result=await response.json();
       assert.equal(response.status,200,JSON.stringify(result));
       assert.equal(result.trip.source,'ai');
-      assert.equal(result.trip.itinerary.days.length,1);
+      assert.equal(result.trip.itinerary.days.length,days);
+      assert.ok(result.trip.itinerary.destinationAdvice);
+      console.log(`${days}-day itinerary completed in ${Math.round(performance.now()-started)}ms`);
       generated.push(result);
     }
     sql.close();
