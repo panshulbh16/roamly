@@ -52,7 +52,7 @@ import { sampleTrip } from "@/lib/trips/sample";
 import { getPackingCues, getTripSignature } from "@/lib/trips/insights";
 import { DestinationStays, StayFinder } from "@/components/trips/stay-finder";
 import { DestinationCarousel } from "@/components/trips/destination-carousel";
-import { TripCostLinks } from "@/components/trips/trip-cost";
+import { BudgetSelector, TripCostResult } from "@/components/trips/trip-cost";
 import { DestinationAdvice } from "@/components/trips/destination-advice";
 import type { Trip, Intake } from "@/lib/trips/schema";
 const interests = [
@@ -305,7 +305,7 @@ export function Workspace({
               </span>
             </div>
           </div>
-          <TripCostLinks input={trip.intake} />
+          <TripCostResult key={trip.id} input={trip.intake} />
           <DestinationAdvice advice={trip.itinerary.destinationAdvice} destination={trip.intake.destination} />
           <div className="planner-layout">
             <div className="trip-days">
@@ -457,9 +457,11 @@ export function Workspace({
                     When are you going?
                     <input
                       aria-label="Departure date"
+                      required
                       type="date"
                       value={form.startDate}
                       onChange={(e) => update("startDate", e.target.value)}
+                      onInput={(e) => update("startDate", e.currentTarget.value)}
                     />
                   </label>
                   <Choice
@@ -481,13 +483,7 @@ export function Workspace({
                     )}
                     onChange={(v) => update("travelers", parseInt(v))}
                   />
-                  <Choice
-                    label="Your travel budget"
-                    value={form.budget}
-                    values={["Budget", "Comfort", "Luxury"]}
-                    onChange={(v) => update("budget", v as Intake["budget"])}
-                  />
-                  <TripCostLinks input={form} />
+                  <BudgetSelector value={form.budget} onChange={(value) => update("budget", value)} />
                   <div className="field wide">
                     What do you love?
                     <div className="interests">

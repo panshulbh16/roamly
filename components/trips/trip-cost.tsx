@@ -5,6 +5,21 @@ import { useSearchParams } from "next/navigation";
 import { Backpack, Armchair, Gem, ArrowLeft } from "lucide-react";
 import { bands, browserCurrency, costInputSchema, costUrl, currencies, destinationBand, estimateCost, styles, type CostBand, type CostInput } from "@/lib/trips/cost";
 const icons = { Budget: Backpack, Comfort: Armchair, Luxury: Gem };
+export function BudgetSelector({ value, onChange }: { value: CostInput["budget"]; onChange: (value: CostInput["budget"]) => void }) {
+  return <section className="trip-cost-entry" aria-label="Travel budget">
+    <span className="cost-shortcuts-label">Travel budget · estimate cost</span>
+    <div className="cost-shortcuts">{styles.map(style => {
+      const Icon = icons[style];
+      return <button key={style} type="button" className="cost-shortcut" aria-pressed={value === style} onClick={() => onChange(style)}><Icon size={16} aria-hidden="true" />{style}</button>;
+    })}</div>
+    <span className="cost-shortcut-hint">Your estimate appears with your itinerary.</span>
+  </section>;
+}
+export function TripCostResult({ input }: { input: CostInput }) {
+  const parsed = costInputSchema.safeParse(input);
+  if (!parsed.success) return <p className="subtext">Create an itinerary with a departure date to see a cost estimate.</p>;
+  return <CostBreakdown input={parsed.data} embedded />;
+}
 export function TripCostLinks({ input }: { input: CostInput }) {
   const valid = costInputSchema.safeParse(input).success;
   return (
@@ -48,7 +63,7 @@ export function TripCostPage() {
   const { destination, startDate, days, travelers } = parsed.data;
   return <CostBreakdown key={JSON.stringify([destination, startDate, days, travelers])} input={parsed.data} initialBand={bands.find(b => b === params.get("band"))} />;
 }
-export function CostBreakdown({ input, initialBand }: { input: CostInput; initialBand?: CostBand }) {
+export function CostBreakdown({ input, initialBand, embedded = false }: { input: CostInput; initialBand?: CostBand; embedded?: boolean }) {
   const detected = destinationBand(input.destination);
   const [band, setBand] = useState<CostBand>(initialBand ?? detected.band);
   const [currency, setCurrency] = useState("");
@@ -82,16 +97,16 @@ export function CostBreakdown({ input, initialBand }: { input: CostInput; initia
   const format = (value: number) => active ? new Intl.NumberFormat(undefined, { style: "currency", currency: active.currency, maximumFractionDigits: 0 }).format(value * active.rate) : "—";
   const range = (low: number, high: number) => `${format(low)} – ${format(high)}`;
   const labels: Record<string, string> = { stay: "Accommodation", food: "Food & drinks", transport: "Local transport", activities: "Activities", buffer: "10% contingency" };
-  return <main className="workspace cost-page">
-    <Link className="text-button" href="/"><ArrowLeft size={15} />Planner</Link>
+  return <section className={embedded ? "cost-page trip-cost-result" : "workspace cost-page"} aria-label="Trip cost estimate">
+    {!embedded && <Link className="text-button" href="/"><ArrowLeft size={15} />Planner</Link>}
     <div className="page-heading"><div><span className="eyebrow">YOUR TRIP, YOUR BUDGET</span><h1>{input.destination}</h1><p className="subtext">{input.startDate} · {input.days} days · {estimate.nights} nights · {input.travelers} {input.travelers === 1 ? "traveler" : "travelers"}</p></div><label className="field">Display currency<select value={currency || conversion?.currency || ""} onChange={e => { setCurrency(e.target.value); setConversion(null); setError(""); try { localStorage.setItem("roamly.currency", e.target.value); } catch { /* Optional device preference. */ } }}><option value="" disabled>Detecting currency…</option>{currencies.map(c => <option key={c} value={c}>{c}</option>)}</select></label></div>
-    <nav className="cost-shortcuts" aria-label="Travel style">{styles.map(style => {
+    {!embedded && <nav className="cost-shortcuts" aria-label="Travel style">{styles.map(style => {
       const Icon = icons[style];
       return <Link key={style} scroll={false} href={costUrl(input, style) + "&band=" + encodeURIComponent(band)}
         className="cost-shortcut" aria-current={style === input.budget ? "page" : undefined}>
         <Icon size={16} aria-hidden="true" /><span>{style}</span>
       </Link>;
-    })}</nav>
+    })}</nav>}
     <div className="cost-layout">
       <section className="panel cost-total"><span className="eyebrow">{input.budget.toUpperCase()} · WHOLE GROUP</span><h2 aria-live="polite">{active ? range(estimate.low, estimate.high) : error ? "Conversion unavailable" : "Loading estimate…"}</h2><p>Estimated on-the-ground spending</p><p className="subtext">{active ? `${range(estimate.low / input.travelers, estimate.high / input.travelers)} per person` : "Your estimate will appear when the exchange rate is ready."}</p>
       {error && <div role="alert" className="error">{error}<button className="text-button" onClick={() => { setError(""); setConversion(null); setRetry(r => r + 1); }}>Try again</button></div>}
@@ -99,5 +114,5 @@ export function CostBreakdown({ input, initialBand }: { input: CostInput; initia
       <section className="panel"><h2 className="aside-title">Where the money goes</h2><dl className="cost-rows">{estimate.rows.map(row => <div key={row.key}><dt>{labels[row.key]}</dt><dd>{active ? range(row.low, row.high) : "—"}</dd></div>)}</dl></section>
     </div>
     <section className="panel cost-assumptions"><h2 className="aside-title">Make the assumptions fit your trip</h2><label className="field">Destination cost level<select value={band} onChange={e => setBand(e.target.value as CostBand)}>{bands.map(b => <option key={b}>{b}</option>)}</select></label><p className="subtext">{detected.country ? `Suggested from ${detected.country}.` : "We haven’t matched this destination. A mid-cost allowance is shown."} Change this for your specific city or season.</p><p className="subtext">Accommodation assumes {estimate.rooms} {estimate.rooms === 1 ? "room" : "rooms"}, up to two travelers per room, for {estimate.nights} nights. Food, transport and activity allowances cover every traveler on all {input.days} days. No overnight stay is included for a one-day trip.</p><p className="subtext">Your departure date is recorded for this trip; these allowances are not adjusted for seasonal or date-specific prices. These broad USD-based allowances compare travel styles; they don’t price individual itinerary activities or check availability. Peak seasons and special experiences can exceed the range.</p><p className="form-note">{active?.date ? <>Exchange rate dated {active.date} from <a href="https://frankfurter.dev/" target="_blank" rel="noopener noreferrer">Frankfurter</a>. Bank rates and fees may differ.</> : "Base allowances are in USD."} Your currency preference is remembered on this device.</p></section>
-  </main>;
+  </section>;
 }

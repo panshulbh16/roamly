@@ -129,3 +129,30 @@ test('all selectable currencies format bounded estimates without crashing', () =
     assert.ok(formatter.format(1234567).length > 0);
   }
 });
+
+test('planner date control keeps both native event paths wired', async () => {
+  const source = await (await import('node:fs/promises')).readFile(new URL('../components/trips/workspace.tsx', import.meta.url), 'utf8');
+  assert.match(source, /onChange=\{\(e\) => update\("startDate", e\.target\.value\)\}/);
+  assert.match(source, /onInput=\{\(e\) => update\("startDate", e\.currentTarget\.value\)\}/);
+});
+
+test('budget choices only select a preference and result estimate stays on the itinerary', async () => {
+  const { BudgetSelector, CostBreakdown } = await vite.ssrLoadModule('/components/trips/trip-cost.tsx');
+  for (const value of cost.styles) {
+    let selected;
+    const element = BudgetSelector({value,onChange: next => {selected = next;}});
+    const buttons = element.props.children[1].props.children;
+    for (const button of buttons) {
+      assert.equal(button.props.type,'button');
+      assert.equal(button.props.href,undefined);
+      button.props.onClick();
+      assert.equal(selected,button.key);
+    }
+    const html=renderToStaticMarkup(element);
+    assert.equal((html.match(/aria-pressed="true"/g) ?? []).length,1);
+    assert.doesNotMatch(html,/target=|href=|Loading estimate/);
+  }
+  const result=renderToStaticMarkup(React.createElement(CostBreakdown,{input,embedded:true}));
+  assert.match(result,/Trip cost estimate/);
+  assert.doesNotMatch(result,/href="\/cost|aria-label="Travel style"/);
+});

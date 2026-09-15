@@ -1321,6 +1321,8 @@ textarea {
 html { scrollbar-gutter: stable; }
 .cost-shortcut:disabled { opacity: .5; cursor: not-allowed; }
 .cost-shortcut[aria-current="page"] { background: #e1eddf; border-color: #517761; }
+.cost-shortcut[aria-pressed="true"] { background: #e1eddf; border-color: #517761; }
+.trip-cost-result { margin: 24px 0; }
 .cost-shortcut-hint { display: block; min-height: 20px; margin-top: 5px; font-size: 12px; line-height: 20px; color: #67716e; }
 .cost-page { min-width: 0; }
 .cost-layout { grid-template-columns: repeat(2, minmax(0, 1fr)); }
