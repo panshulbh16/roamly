@@ -11,6 +11,65 @@ globalThis.__roamlyTest=context;
 const compiled=await build({entryPoints:['tests/auth-history-entry.ts'],bundle:true,write:false,format:'esm',platform:'node',plugins:[{name:'test-runtime',setup(b){b.onResolve({filter:/^(cloudflare:workers|next\/headers|next\/navigation)$/},args=>({path:args.path,namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},args=>({loader:'js',contents:args.path==='cloudflare:workers'?'export const env=globalThis.__roamlyTest.env':args.path==='next/navigation'?'export const redirect=globalThis.__roamlyTest.redirect':`export async function headers(){return globalThis.__roamlyTest.headers} export async function cookies(){const jar=globalThis.__roamlyTest.jar;return {get:n=>jar.has(n)?{name:n,value:jar.get(n).value}:undefined,getAll:()=>Array.from(jar,([name,c])=>({name,value:c.value})),set:(name,value,options)=>jar.set(name,{value,options}),delete:name=>jar.delete(name)}}`}));}}]});
 const app=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text).toString('base64'));
 const input={destination:'Auckland',startDate:'',days:5,travelers:2,budget:'Comfort',pace:'Balanced',interests:['Nature'],needs:'',homeCity:''};
+function providerStream(raw, ending='message_stop') {
+  const events=[];
+  for(const text of raw) events.push({type:'content_block_delta',delta:{type:'text_delta',text}});
+  if(ending) events.push({type:ending});
+  return new Response(events.map(e=>'data: '+JSON.stringify(e)+'\n\n').join(''));
+}
+test('stream route delivers a preview before completion and stores only validated trips',async()=>{
+  const original=globalThis.fetch;
+  user('stream-test');
+  Object.assign(context.env,{ANTHROPIC_API_KEY:'fixture',ANTHROPIC_MODEL:'claude-opus-5',AI_MONTHLY_REQUEST_LIMIT:'100'});
+  const itinerary={title:'Auckland',summary:'Harbour',days:[{title:'Day 1',activities:[{time:'Morning',title:'Walk',description:'Walk',place:'Harbour'}]}],tips:[],destinationAdvice:{highlights:['Harbour','Parks'],watchOutFor:['Rain; bring a coat.','Hills; check access.']}};
+  try {
+    for(const success of [true,false]) {
+      let release;
+      const gate=new Promise(r=>{release=r;});
+      globalThis.fetch=async()=>new Response(new ReadableStream({async start(c){
+        const emit=e=>c.enqueue(new TextEncoder().encode('data: '+JSON.stringify(e)+'\n\n'));
+        emit({type:'content_block_delta',delta:{type:'text_delta',text:'{"title":"Auckland",'}});
+        await gate;
+        if(success){emit({type:'content_block_delta',delta:{type:'text_delta',text:JSON.stringify(itinerary).slice('{"title":"Auckland",'.length)}});emit({type:'message_stop'});}
+        c.close();
+      }}));
+      const request=req('/api/generate',{...input,days:1});request.headers.set('accept','application/x-ndjson');
+      const response=await app.generate.POST(request);
+      assert.match(response.headers.get('content-type'),/ndjson/);
+      const reader=response.body.getReader();
+      const first=await reader.read();
+      assert.equal(JSON.parse(new TextDecoder().decode(first.value)).type,'preview');
+      assert.equal(sql.prepare("SELECT count(*) n FROM search_history WHERE owner='stream-test' AND status='pending'").get().n,1);
+      release();
+      let rest='';while(true){const {done,value}=await reader.read();if(done)break;rest+=new TextDecoder().decode(value);}
+      const events=rest.trim().split('\n').map(JSON.parse);
+      assert.equal(events.at(-1).type,success?'complete':'error');
+      if(success) assert.deepEqual(events.at(-1).trip.itinerary,itinerary);
+      assert.equal(sql.prepare("SELECT status FROM search_history WHERE owner='stream-test'").get().status,success?'completed':'failed');
+      sql.exec("DELETE FROM search_history WHERE owner='stream-test'");
+    }
+  } finally {
+    globalThis.fetch=original;context.headers=new Headers();
+    for(const key of ['ANTHROPIC_API_KEY','ANTHROPIC_MODEL','AI_MONTHLY_REQUEST_LIMIT'])delete context.env[key];
+    sql.exec("DELETE FROM search_history WHERE owner='stream-test'; DELETE FROM usage;");
+  }
+});
+test('streaming provider emits complete sections for all 1–10 days and rejects a truncated stream',async()=>{
+  const original=globalThis.fetch;
+  context.env.ANTHROPIC_MODEL='claude-opus-5';
+  try {
+    for(let days=1;days<=10;days++) {
+      const itinerary={title:'Auckland',summary:'Harbour days',days:Array.from({length:days},(_,i)=>({title:'Day '+(i+1),activities:[{time:'Morning',title:'Walk',description:'Harbour walk',place:'Auckland'}]})),tips:[],destinationAdvice:{highlights:['Waterfront','Parks'],watchOutFor:['Rain; pack a coat.','Hills; check access.']}};
+      globalThis.fetch=async(_,options)=>{assert.equal(JSON.parse(options.body).stream,true);return providerStream(JSON.stringify(itinerary));};
+      const previews=[];
+      assert.deepEqual(await new app.planner.AnthropicPlanner().generate({...input,days},p=>previews.push(p)),itinerary);
+      assert.ok(previews.some(p=>p.title&&!p.days));
+      for(let n=1;n<=days;n++) assert.ok(previews.some(p=>p.days?.length===n));
+      globalThis.fetch=async()=>providerStream(JSON.stringify(itinerary),'');
+      await assert.rejects(()=>new app.planner.AnthropicPlanner().generate({...input,days},()=>{}),/incomplete response/);
+    }
+  } finally {globalThis.fetch=original;delete context.env.ANTHROPIC_MODEL;}
+});
 const origin='https://roamly.test';
 const destinationAdvice={highlights:['Harbour walks offer waterfront views.','Volcanic viewpoints provide city panoramas.'],watchOutFor:['Hills can be steep; choose accessible routes.','Weather changes quickly; carry a rain layer.']};
 test('planner sends optional workspace header and validates the provider itinerary',async()=>{

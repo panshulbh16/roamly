@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -55,6 +55,7 @@ import { DestinationCarousel } from "@/components/trips/destination-carousel";
 import { BudgetSelector, TripCostResult } from "@/components/trips/trip-cost";
 import { DestinationAdvice } from "@/components/trips/destination-advice";
 import type { Trip, Intake } from "@/lib/trips/schema";
+import { consumePlannerStream, type Preview } from "@/lib/trips/stream";
 const interests = [
   { name: "Nature", icon: Leaf },
   { name: "Food", icon: Utensils },
@@ -123,6 +124,9 @@ export function Workspace({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [trip, setTrip] = useState<Trip | null>(null);
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const generation = useRef<AbortController | null>(null);
+  useEffect(() => () => generation.current?.abort(), [view, searchParams]);
   const [saved, setSaved] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(view === "trips");
   const [extra, setExtra] = useState(false);
@@ -208,19 +212,29 @@ export function Workspace({
   }, [searchParams, view]);
   async function generate(e: React.FormEvent) {
     e.preventDefault();
+    if (generation.current) return;
+    const controller = new AbortController();
+    generation.current = controller;
     setBusy(true);
     setError("");
+    setPreview({});
+    window.scrollTo({ top: 0, behavior: "smooth" });
     try {
-      const d = await api("/api/generate", {
+      const response = await fetch("/api/generate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
         body: JSON.stringify(form),
       });
-      setTrip(d.trip);
+      const completed = await consumePlannerStream(response, setPreview);
+      controller.signal.throwIfAborted();
+      setTrip(completed);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) {
-      setError((e as Error).message);
+      if (!controller.signal.aborted) setError((e as Error).message);
     } finally {
+      generation.current = null;
+      setPreview(null);
       setBusy(false);
     }
   }
@@ -267,7 +281,26 @@ export function Workspace({
   return (
     <main className="workspace">
       <Toaster richColors />
-      {trip ? (
+      {preview ? (
+        <div aria-busy="true">
+          <span className="eyebrow">Your itinerary is taking shape</span>
+          <h1 className="trip-title">{preview.title ?? `Planning ${form.destination}`}</h1>
+          {preview.summary && <p className="subtext">{preview.summary}</p>}
+          <p role="status"><LoaderCircle size={16} className="animate-spin inline" /> {preview.days?.length ?? 0} of {form.days} days received. Final checks follow.</p>
+          <div className="trip-actions"><button className="primary" disabled><Bookmark size={16} />Save trip</button></div>
+          <div className="trip-days">
+            {preview.days?.map((day, i) => (
+              <section className="day-card" key={i}>
+                <div className="day-header"><span className="day-number">DAY {String(i + 1).padStart(2, "0")}</span><h2>{day.title}</h2></div>
+                {day.activities.map((activity, j) => <div className="activity" key={j}><small>{activity.time}</small><h3>{activity.title}</h3><p>{activity.description}</p><p>{activity.place}</p></div>)}
+              </section>
+            ))}
+          </div>
+          <DestinationAdvice advice={preview.destinationAdvice} destination={form.destination} />
+          {preview.tips && <ul>{preview.tips.map((tip, i) => <li key={i}>{tip}</li>)}</ul>}
+          <p className="subtext">You can save or edit once the complete itinerary is ready.</p>
+        </div>
+      ) : trip ? (
         <>
           <button
             className="text-button"

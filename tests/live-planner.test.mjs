@@ -9,10 +9,12 @@ import {build} from 'esbuild';
 
 // Explicit opt-in: makes two paid provider requests. Identity is simulated;
 // this does not test browser login or the development server's D1 database.
-test('live Opus itineraries survive reopening History in an isolated database', {
+test('live itineraries survive reopening History in an isolated database', {
   skip: process.env.ROAMLY_LIVE_TEST !== '1', timeout: 130000,
 }, async()=>{
   const config=parseEnv(readFileSync('.env','utf8'));
+  // Benchmark a candidate without changing local or production credentials/config.
+  if(process.env.ROAMLY_BENCHMARK_MODEL) config.ANTHROPIC_MODEL=process.env.ROAMLY_BENCHMARK_MODEL;
   assert.ok(config.ANTHROPIC_API_KEY && config.ANTHROPIC_MODEL);
   assert.ok(Number(config.AI_MONTHLY_REQUEST_LIMIT)>0);
   const path=join(mkdtempSync(join(tmpdir(),'roamly-live-')),'history.sqlite');
@@ -44,13 +46,25 @@ test('live Opus itineraries survive reopening History in an isolated database', 
   try {
     for(const [destination,days] of [['Auckland',1],['Austria',10]]) {
       const started=performance.now();
-      const response=await app.generate.POST(new Request(origin+'/api/generate',{method:'POST',headers:{origin,'Content-Type':'application/json'},body:JSON.stringify({...input,destination,days})}));
-      const result=await response.json();
-      assert.equal(response.status,200,JSON.stringify(result));
+      const response=await app.generate.POST(new Request(origin+'/api/generate',{method:'POST',headers:{origin,'Content-Type':'application/json',Accept:'application/x-ndjson'},body:JSON.stringify({...input,destination,days})}));
+      assert.equal(response.status,200);
+      let result, first=false, buffer='';
+      const decoder=new TextDecoder();
+      for await(const chunk of response.body) {
+        buffer+=decoder.decode(chunk,{stream:true});
+        let end;
+        while((end=buffer.indexOf('\n'))>=0) {
+          const event=JSON.parse(buffer.slice(0,end));buffer=buffer.slice(end+1);
+          if(event.type==='preview'&&!first) {first=true;console.log(`${days}-day first section: ${Math.round(performance.now()-started)}ms`);}
+          assert.notEqual(event.type,'error',event.error);
+          if(event.type==='complete')result=event;
+        }
+      }
+      assert.ok(first && result);
       assert.equal(result.trip.source,'ai');
       assert.equal(result.trip.itinerary.days.length,days);
       assert.ok(result.trip.itinerary.destinationAdvice);
-      console.log(`${days}-day itinerary completed in ${Math.round(performance.now()-started)}ms`);
+      console.log(`${config.ANTHROPIC_MODEL}: ${days}-day itinerary completed in ${Math.round(performance.now()-started)}ms`);
       generated.push(result);
     }
     sql.close();
