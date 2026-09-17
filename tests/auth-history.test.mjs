@@ -92,6 +92,9 @@ test('planner sends optional workspace header and validates the provider itinera
         assert.equal(JSON.parse(options.body).max_tokens,5000);
         assert.match(JSON.parse(options.body).system,/destinationAdvice/);
         assert.match(JSON.parse(options.body).system,/exactly the requested number of days/);
+        assert.match(JSON.parse(options.body).system,/under 12 words/);
+        assert.match(JSON.parse(options.body).system,/compact JSON without indentation/);
+        assert.doesNotMatch(JSON.parse(options.body).system,/under 45 words/);
         return Response.json({content:[{type:'text',text:JSON.stringify(itinerary)}],stop_reason:'end_turn'});
       };
       assert.deepEqual(await new app.planner.AnthropicPlanner().generate({...input,days:1}),itinerary);

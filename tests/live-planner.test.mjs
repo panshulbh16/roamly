@@ -43,12 +43,23 @@ test('live itineraries survive reopening History in an isolated database', {
   const origin='http://localhost:5173';
   const input={startDate:'',days:1,travelers:2,budget:'Comfort',pace:'Balanced',interests:['Nature'],needs:'',homeCity:''};
   const generated=[];
+  const originalFetch=globalThis.fetch;
+  if(process.env.ROAMLY_BENCHMARK_THINKING==='disabled'||process.env.ROAMLY_BENCHMARK_FAST==='1') {
+    globalThis.fetch=async(url,options)=>{const response=await originalFetch(url,{...options,
+      headers:{...options.headers,...(process.env.ROAMLY_BENCHMARK_FAST==='1'?{'anthropic-beta':'fast-mode-2026-02-01'}:{})},
+      body:JSON.stringify({...JSON.parse(options.body),
+        ...(process.env.ROAMLY_BENCHMARK_THINKING==='disabled'?{thinking:{type:'disabled'}}:{}),
+        ...(process.env.ROAMLY_BENCHMARK_FAST==='1'?{speed:'fast'}:{})})});
+      if(!response.ok) { const data=await response.clone().json();console.log('Benchmark provider rejection:',response.status,data.error?.type,data.error?.message); }
+      return response;
+    };
+  }
   try {
     for(const [destination,days] of [['Auckland',1],['Austria',10]]) {
       const started=performance.now();
       const response=await app.generate.POST(new Request(origin+'/api/generate',{method:'POST',headers:{origin,'Content-Type':'application/json',Accept:'application/x-ndjson'},body:JSON.stringify({...input,destination,days})}));
       assert.equal(response.status,200);
-      let result, first=false, buffer='';
+      let result, first=false, summary=false, firstDay=false, buffer='';
       const decoder=new TextDecoder();
       for await(const chunk of response.body) {
         buffer+=decoder.decode(chunk,{stream:true});
@@ -56,6 +67,8 @@ test('live itineraries survive reopening History in an isolated database', {
         while((end=buffer.indexOf('\n'))>=0) {
           const event=JSON.parse(buffer.slice(0,end));buffer=buffer.slice(end+1);
           if(event.type==='preview'&&!first) {first=true;console.log(`${days}-day first section: ${Math.round(performance.now()-started)}ms`);}
+          if(event.type==='preview'&&event.itinerary.summary&&!summary) {summary=true;console.log(`${days}-day overview: ${Math.round(performance.now()-started)}ms`);}
+          if(event.type==='preview'&&event.itinerary.days?.length&&!firstDay) {firstDay=true;console.log(`${days}-day first complete day: ${Math.round(performance.now()-started)}ms`);}
           assert.notEqual(event.type,'error',event.error);
           if(event.type==='complete')result=event;
         }
@@ -81,6 +94,7 @@ test('live itineraries survive reopening History in an isolated database', {
     }
     console.log('Real provider generation and SQLite reopen passed. Test database: '+path);
   } finally {
+    globalThis.fetch=originalFetch;
     sql.close();
     delete globalThis.__roamlyLiveEnv;
   }
