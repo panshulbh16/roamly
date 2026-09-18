@@ -31,3 +31,17 @@ test('destination suggestion endpoint bounds input and returns public cacheable 
   assert.deepEqual((await GET(new Request('https://roamly.test/api/destinations?query=x'))).status, 200);
   assert.deepEqual((await GET(new Request('https://roamly.test/api/destinations?query=x'))).status, 200);
 });
+
+test('Bangalore aliases resolve to Bengaluru with valid qualifiers and lead suggestions', async () => {
+  const expected = { name: 'Bengaluru, Karnataka, India', kind: 'city' };
+  for (const query of ['bangalore', ' BANGALORE ', 'Bangalore, India', 'Bangalore, Karnataka, India', 'Bengaluru']) {
+    assert.deepEqual(resolveDestination(query), expected);
+    assert.deepEqual(suggestDestinations(query)[0], expected);
+  }
+  assert.equal(resolveDestination('Bangalore, Australia'), null);
+  assert.deepEqual(suggestDestinations('bangalo')[0], expected);
+  assert.equal(resolveDestination('München')?.kind, 'city');
+  assert.equal(resolveDestination('München, India'), null);
+  const response = await GET(new Request('https://roamly.test/api/destinations?query=bangalore'));
+  assert.deepEqual((await response.json()).suggestions[0], expected);
+});
