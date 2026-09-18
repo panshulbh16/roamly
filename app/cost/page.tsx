@@ -8,5 +8,5 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const params = await searchParams;
   const parsed = costInputSchema.safeParse(params);
   const destination = parsed.success ? resolveDestination(parsed.data.destination) : null;
-  return <AppShell user={await currentUser()}><TripCostPage destinationValid={!!destination} /></AppShell>;
+  return <AppShell user={await currentUser()}><TripCostPage destinationValid={!!destination} resolvedDestination={destination?.name} /></AppShell>;
 }

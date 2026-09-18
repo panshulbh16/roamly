@@ -94,7 +94,8 @@ test('style cards keep unsaved planner open and cost page exposes assumptions ac
   assert.match(page, /WHOLE GROUP/);
   assert.match(page, /not booking quotes/);
   assert.match(page, /Flights, intercity travel/);
-  assert.match(page, /Loading estimate/);
+  assert.doesNotMatch(page, /Loading estimate/);
+  assert.match(page, /\$748/);
   assert.match(page, /&amp;band=Mid%20cost/);
 });
 
@@ -155,4 +156,39 @@ test('budget choices only select a preference and result estimate stays on the i
   const result=renderToStaticMarkup(React.createElement(CostBreakdown,{input,embedded:true}));
   assert.match(result,/Trip cost estimate/);
   assert.doesNotMatch(result,/href="\/cost|aria-label="Travel style"/);
+});
+
+
+test('domestic comfort allowances use INR and support real trip budgets without FX', async () => {
+  const domestic = { ...input, destination: 'Bareilly, Uttar Pradesh, India', days: 4 };
+  const result = cost.estimateCost(domestic, 'Lower cost');
+  assert.equal(result.currency, 'INR');
+  assert.equal(result.low, 19888);
+  assert.equal(result.high, 32318);
+  const custom = cost.estimateCost(domestic, 'Lower cost', { stay: 2000, food: 500, transport: 250, activities: 0 });
+  assert.equal(custom.low, 10560);
+  assert.equal(custom.high, 17160);
+  assert.throws(() => cost.estimateCost(domestic, 'Lower cost', { stay: -1, food: 0, transport: 0, activities: 0 }));
+  const { CostBreakdown } = await vite.ssrLoadModule('/components/trips/trip-cost.tsx');
+  const html = renderToStaticMarkup(React.createElement(CostBreakdown, { input: domestic }));
+  assert.match(html, /19,888/);
+  assert.match(html, /INR, per room/);
+  assert.doesNotMatch(html, /Loading estimate/);
+});
+
+test('same-currency India estimate never calls the exchange-rate provider', async () => {
+  const { GET } = await vite.ssrLoadModule('/app/api/currency/route.ts');
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => { throw new Error('must not fetch'); };
+    const response = await GET(new Request('https://roamly.test/api/currency?base=INR&currency=INR'));
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { base: 'INR', currency: 'INR', rate: 1, date: null });
+    assert.equal((await GET(new Request('https://roamly.test/api/currency?base=BAD&currency=INR'))).status, 400);
+    globalThis.fetch = async url => {
+      assert.equal(url, 'https://api.frankfurter.dev/v2/rate/INR/USD');
+      return Response.json({ base: 'INR', quote: 'USD', rate: 0.011, date: '2026-09-18' });
+    };
+    assert.equal((await (await GET(new Request('https://roamly.test/api/currency?base=INR&currency=USD'))).json()).rate, 0.011);
+  } finally { globalThis.fetch = original; }
 });
