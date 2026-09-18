@@ -45,3 +45,14 @@ test('client decodes split UTF-8 and only returns a validated final trip',async(
   await assert.rejects(()=>consumePlannerStream(response([{type:'error',error:'Please retry'}]),()=>{}),/Please retry/);
   await assert.rejects(()=>consumePlannerStream(response([{type:'complete',trip:{}}]),()=>{}));
 });
+
+
+test('first activity appears before the rest of its day finishes', () => {
+  const activity = day.activities[0];
+  const prefix = '{"title":"Kyoto","days":[{"title":"Day one","activities":[' + JSON.stringify(activity);
+  assert.deepEqual(itineraryPreview(prefix).days, [{ title: 'Day one', activities: [activity] }]);
+  assert.deepEqual(itineraryPreview(prefix + ',{"time":"Evening","title":"unfinished').days, [{ title: 'Day one', activities: [activity] }]);
+  assert.equal(itineraryPreview('{"days":[{"title":"Day one","activities":[{"time":"Morning"').days, undefined);
+  const complete = prefix + ',' + JSON.stringify({ ...activity, time: 'Evening' }) + ']}]}';
+  assert.equal(itineraryPreview(complete).days[0].activities.length, 2);
+});

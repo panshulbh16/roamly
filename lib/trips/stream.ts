@@ -19,6 +19,46 @@ function valueEnd(text: string, start: number): number {
   return -1;
 }
 
+// A day can be displayed as soon as its first complete activity arrives.
+// Parse only complete values; never repair or render unfinished strings.
+function partialDay(text: string, start: number) {
+  const result: Record<string, unknown> = {};
+  let i = start + 1;
+  const skip = () => { while (i < text.length && /[\s,]/.test(text[i])) i++; };
+  while (i < text.length) {
+    skip();
+    if (text[i] !== '"') break;
+    const end = valueEnd(text, i);
+    if (end < 0) break;
+    const key = JSON.parse(text.slice(i, end));
+    i = end; skip();
+    if (text[i++] !== ":") break;
+    skip();
+    if (key === "activities" && text[i] === "[") {
+      i++;
+      const activities = [];
+      while (i < text.length) {
+        skip();
+        if (text[i] !== "{") break;
+        const end = valueEnd(text, i);
+        if (end < 0) break;
+        activities.push(JSON.parse(text.slice(i, end)));
+        i = end;
+      }
+      result.activities = activities;
+      if (text[i] !== "]") break;
+      i++;
+    } else {
+      const end = valueEnd(text, i);
+      if (end < 0) break;
+      if (key === "title") result.title = JSON.parse(text.slice(i, end));
+      i = end;
+    }
+  }
+  const parsed = itinerarySchema.shape.days.element.safeParse(result);
+  return parsed.success ? parsed.data : null;
+}
+
 export function itineraryPreview(text: string): Preview {
   const result: Record<string, unknown> = {};
   let i = text.indexOf("{") + 1;
@@ -40,7 +80,11 @@ export function itineraryPreview(text: string): Preview {
         skip();
         if (text[i] !== "{") break;
         const dayEnd = valueEnd(text, i);
-        if (dayEnd < 0) break;
+        if (dayEnd < 0) {
+          const partial = partialDay(text, i);
+          if (partial) days.push(partial);
+          break;
+        }
         try {
           const day = itinerarySchema.shape.days.element.safeParse(JSON.parse(text.slice(i, dayEnd)));
           if (!day.success) break;

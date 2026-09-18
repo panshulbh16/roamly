@@ -121,6 +121,9 @@ export class AnthropicPlanner implements PlannerProvider {
           if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
             raw += event.delta.text;
             if (raw.length > 128000) throw new Error("Oversized itinerary");
+            // Plain text tokens cannot complete a JSON value. Avoid rescanning
+            // and validating the whole itinerary for every word streamed.
+            if (!/["}\]]/.test(event.delta.text)) continue;
             const preview = itineraryPreview(raw);
             const serialized = JSON.stringify(preview);
             if (serialized !== previous && serialized !== "{}") { onPreview(preview); previous = serialized; }

@@ -303,7 +303,7 @@ export function Workspace({
           <span className="eyebrow">Your itinerary is taking shape</span>
           <h1 className="trip-title">{preview.title ?? `Planning ${form.destination}`}</h1>
           {preview.summary && <p className="subtext">{preview.summary}</p>}
-          <p role="status"><LoaderCircle size={16} className="animate-spin inline" /> {preview.days?.length ?? 0} of {form.days} days received. Final checks follow.</p>
+          <p role="status"><LoaderCircle size={16} className="animate-spin inline" /> {preview.days?.length ?? 0} of {form.days} days started. Activities appear as they arrive.</p>
           <div className="trip-actions"><button className="primary" disabled><Bookmark size={16} />Save trip</button></div>
           <div className="trip-days">
             {preview.days?.map((day, i) => (
