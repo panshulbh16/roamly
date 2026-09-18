@@ -116,9 +116,11 @@ function Choice({
 export function Workspace({
   view = "plan",
   aiReady = false,
+  signedIn = true,
 }: {
   view?: "plan" | "trips" | "explore" | "pricing";
   aiReady?: boolean;
+  signedIn?: boolean;
 }) {
   const searchParams = useSearchParams();
   const [form, setForm] = useState<Intake>(initial);
@@ -295,6 +297,7 @@ export function Workspace({
   return (
     <main className="workspace">
       <Toaster richColors />
+      {!signedIn && <p className="small-tip">Plan a trip without signing in. <Link href="/auth?returnTo=%2F">Sign in</Link> to keep future searches in your history and save trips. Guest searches aren’t saved to an account.</p>}
       {preview ? (
         <div aria-busy="true">
           <span className="eyebrow">Your itinerary is taking shape</span>
@@ -336,10 +339,10 @@ export function Workspace({
             <h1 className="trip-title">{trip.itinerary.title}</h1>
             <p className="subtext">{trip.itinerary.summary}</p>
             <div className="trip-actions">
-              <button className="primary" disabled={busy} onClick={save}>
+              {signedIn ? <button className="primary" disabled={busy} onClick={save}>
                 <Bookmark size={16} />
                 Save trip
-              </button>
+              </button> : <Link className="primary" href="/auth?returnTo=%2F">Sign in to save trips</Link>}
               <button
                 className="secondary-button"
                 onClick={() => window.print()}

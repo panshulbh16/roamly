@@ -7,7 +7,7 @@ export default async function Page() {
   const u = await currentUser();
   return (
     <AppShell user={u}>
-      <Workspace aiReady={aiEnabled()} />
+      <Workspace aiReady={aiEnabled()} signedIn={!!u} />
     </AppShell>
   );
 }

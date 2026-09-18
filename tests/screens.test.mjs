@@ -26,6 +26,12 @@ test('all workspace views render their own initial state',()=>{
   assert.match(render(Workspace,{view:'explore'}),/Airbnb/);
   assert.match(render(Workspace,{view:'pricing'}),/Plus/);
 });
+test('guest planner offers sign-in for future history without hiding the form',()=>{
+  const html=render(Workspace,{aiReady:true,signedIn:false});
+  assert.match(html,/Plan a trip without signing in/);
+  assert.match(html,/future searches in your history/);
+  assert.match(html,/Create my itinerary/);
+});
 test('history starts with a loading status and a route back to planning',()=>{
   const html=render(HistoryView);assert.match(html,/Your search history/);assert.match(html,/role="status"/);assert.match(html,/Loading history/);assert.match(html,/href="\/"/);
 });

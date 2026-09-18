@@ -1,7 +1,7 @@
 import { itinerarySchema, tripSchema, type Itinerary, type Trip } from "./schema";
 
 export type Preview = Partial<Itinerary>;
-export type PlannerEvent = { type: "preview"; itinerary: Preview } | { type: "complete"; trip: Trip; historyId: string } | { type: "error"; error: string };
+export type PlannerEvent = { type: "preview"; itinerary: Preview } | { type: "complete"; trip: Trip; historyId: string | null } | { type: "error"; error: string };
 
 // Only expose complete JSON values. Braces inside quoted/escaped text are data.
 function valueEnd(text: string, start: number): number {

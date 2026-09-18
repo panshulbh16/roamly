@@ -178,7 +178,29 @@ test('planner rejects null and malformed content blocks with a controlled provid
 });
 function user(id='alice'){context.headers=new Headers({'oai-authenticated-user-id':id,'oai-authenticated-user-email':id+'@example.test'});}
 function req(path,data,method='POST'){return new Request(origin+path,{method,headers:{origin,'Content-Type':'application/json'},...(data===undefined?{}:{body:JSON.stringify(data)})})}
-test('anonymous users cannot read history or submit searches',async()=>{context.headers=new Headers();assert.equal((await app.history.GET(req('/api/history',undefined,'GET'))).status,401);assert.equal((await app.generate.POST(req('/api/generate',input))).status,401);assert.equal(sql.prepare('SELECT count(*) AS n FROM search_history').get().n,0)});
+test('guests cannot read history and unavailable planning does not create history',async()=>{context.headers=new Headers();assert.equal((await app.history.GET(req('/api/history',undefined,'GET'))).status,401);assert.equal((await app.generate.POST(req('/api/generate',input))).status,503);assert.equal(sql.prepare('SELECT count(*) AS n FROM search_history').get().n,0)});
+test('guest JSON and streamed generation work without history and respect daily limits',async()=>{
+  const original=globalThis.fetch;
+  context.headers=new Headers();
+  Object.assign(context.env,{ANTHROPIC_API_KEY:'fixture',ANTHROPIC_MODEL:'fixture',AI_MONTHLY_REQUEST_LIMIT:'100'});
+  const itinerary={title:'Auckland',summary:'Harbour trip',days:[{title:'Day 1',activities:[{time:'Morning',title:'Walk',description:'Walk along the harbour',place:'Auckland'}]}],tips:[],destinationAdvice};
+  let calls=0;
+  globalThis.fetch=async(_,options)=>{calls++;return JSON.parse(options.body).stream?providerStream(JSON.stringify(itinerary)):Response.json({content:[{type:'text',text:JSON.stringify(itinerary)}]});};
+  const before=sql.prepare('SELECT count(*) n FROM search_history').get().n;
+  try {
+    for(let i=0;i<5;i++) {
+      const request=req('/api/generate',{...input,days:1});
+      if(i===0)request.headers.set('accept','application/x-ndjson');
+      const response=await app.generate.POST(request);assert.equal(response.status,200);
+      const result=i===0?JSON.parse((await response.text()).trim().split('\n').at(-1)):await response.json();
+      assert.equal(result.historyId,null);assert.deepEqual(result.trip.itinerary,itinerary);
+    }
+    assert.equal((await app.generate.POST(req('/api/generate',{...input,days:1}))).status,429);
+    assert.equal(calls,5);
+    assert.equal(sql.prepare('SELECT count(*) n FROM search_history').get().n,before);
+    assert.equal((await app.trips.GET()).status,401);
+  } finally {globalThis.fetch=original;for(const key of ['ANTHROPIC_API_KEY','ANTHROPIC_MODEL','AI_MONTHLY_REQUEST_LIMIT'])delete context.env[key];sql.exec('DELETE FROM usage');}
+});
 test('configured public Supabase values do not sign in a local visitor while auth is disabled',async()=>{
   context.headers=new Headers();
   Object.assign(context.env,{SUPABASE_URL:'https://fixture.supabase.co',SUPABASE_PUBLISHABLE_KEY:'fixture-public-key',SUPABASE_AUTH_ENABLED:'false'});
