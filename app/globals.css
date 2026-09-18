@@ -380,6 +380,36 @@ textarea {
 .input-icon input {
   padding-left: 37px;
 }
+.destination-suggestions {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 5px);
+  left: 0;
+  right: 0;
+  max-height: 210px;
+  overflow: auto;
+  border: 1px solid #dfe6e1;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 10px 22px rgba(35, 51, 42, .12);
+}
+.destination-suggestions button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border: 0;
+  border-bottom: 1px solid #edf1ee;
+  text-align: left;
+  color: #36443c;
+  background: #fff;
+}
+.destination-suggestions button:hover,
+.destination-suggestions button:focus-visible { background: #f0f6f1; }
+.destination-suggestions button:last-child { border-bottom: 0; }
+.destination-suggestions small { color: #7a877f; text-transform: capitalize; }
 .interests {
   display: flex;
   gap: 7px;

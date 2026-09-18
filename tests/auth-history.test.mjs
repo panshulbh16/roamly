@@ -17,6 +17,34 @@ function providerStream(raw, ending='message_stop') {
   if(ending) events.push({type:ending});
   return new Response(events.map(e=>'data: '+JSON.stringify(e)+'\n\n').join(''));
 }
+test('API write methods reject foreign origins and invalid identifiers',async()=>{
+  user('boundary-test');
+  for(const [handler,path] of [[app.trips.POST,'/api/trips'],[app.trips.DELETE,'/api/trips'],[app.history.DELETE,'/api/history'],[app.waitlist.POST,'/api/waitlist'],[app.email.POST,'/api/auth/email'],[app.verify.POST,'/api/auth/verify'],[app.google.POST,'/api/auth/google'],[app.logout.POST,'/api/auth/logout']]) {
+    const request=req(path,{});request.headers.set('origin','https://foreign.test');
+    assert.equal((await handler(request)).status,403,path);
+  }
+  for(const offset of ['-1','1.5','100001','NaN','Infinity'])assert.equal((await app.history.GET(req('/api/history?offset='+offset,undefined,'GET'))).status,400);
+  assert.equal((await app.history.GET(req('/api/history?id=bad',undefined,'GET'))).status,400);
+  assert.equal((await app.history.GET(req('/api/history?id='+crypto.randomUUID(),undefined,'GET'))).status,404);
+  for(const route of [app.history,app.trips])assert.equal((await route.DELETE(req('/api/delete',{id:'bad'},'DELETE'))).status,400);
+  context.headers=new Headers();
+});
+test('planner handles refusal, empty text, invalid JSON and output truncation without exposing provider data',async()=>{
+  const original=globalThis.fetch;
+  try {
+    for(const payload of [{content:[],stop_reason:'refusal'},{content:[{type:'text',text:'not JSON'}]},{content:[{type:'text',text:'{}'}]},{content:[],stop_reason:'max_tokens'}]) {
+      globalThis.fetch=async()=>Response.json(payload);
+      await assert.rejects(()=>new app.planner.AnthropicPlanner().generate({...input,days:1}),e=>e.status===502);
+    }
+    globalThis.fetch=async()=>new Response('provider private detail',{status:429});
+    await assert.rejects(()=>new app.planner.AnthropicPlanner().generate(input),e=>e.status===502&&!e.message.includes('private'));
+    globalThis.fetch=async()=>new Response('data: {"type":"error"}\n\n');
+    await assert.rejects(()=>new app.planner.AnthropicPlanner().generate(input,()=>{}),e=>e.status===502);
+    const controller=new AbortController();controller.abort();
+    globalThis.fetch=async(_,options)=>{options.signal.throwIfAborted();};
+    await assert.rejects(()=>new app.planner.AnthropicPlanner().generate(input,()=>{},controller.signal),e=>e.name==='AbortError');
+  } finally {globalThis.fetch=original;}
+});
 test('stream route delivers a preview before completion and stores only validated trips',async()=>{
   const original=globalThis.fetch;
   user('stream-test');
@@ -165,7 +193,7 @@ test('configured public Supabase values do not sign in a local visitor while aut
 });
 test('intake accepts the full supported matrix of trip choices',async()=>{
   user('matrix-user');
-  const destinations=['LA','São Paulo, Brazil','Tokyo / Kyoto','Café, Québec — 旅','Z'.repeat(120)];
+  const destinations=['Auckland','São Paulo, Brazil','Tokyo, Japan','Rome, Italy','Zürich, Switzerland'];
   const interests=[[],['Nature'],['Nature','Food','Culture','Adventure','Photography','Relaxation','History','Art']];
   let expected=0;
   for(const destination of destinations)
@@ -199,6 +227,17 @@ test('intake rejects every invalid boundary before creating history',async()=>{
   }
   const after=sql.prepare("SELECT count(*) AS n FROM search_history WHERE owner='invalid-input-user'").get().n;
   assert.equal(after,before);
+  user();
+});
+test('unknown destinations are rejected before AI usage and history storage',async()=>{
+  user('unknown-destination-user');
+  const before=sql.prepare("SELECT count(*) AS n FROM search_history WHERE owner='unknown-destination-user'").get().n;
+  for(const destination of ['bkldfmlb','Tokyo / Kyoto','Café, Québec — 旅']) {
+    const response=await app.generate.POST(req('/api/generate',{...input,destination}));
+    assert.equal(response.status,422);
+    assert.match((await response.json()).error,/city, town, country, or continent/);
+  }
+  assert.equal(sql.prepare("SELECT count(*) AS n FROM search_history WHERE owner='unknown-destination-user'").get().n,before);
   user();
 });
 test('provider itineraries for every supported day count are accepted',async()=>{

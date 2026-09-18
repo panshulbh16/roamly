@@ -56,6 +56,7 @@ import { BudgetSelector, TripCostResult } from "@/components/trips/trip-cost";
 import { DestinationAdvice } from "@/components/trips/destination-advice";
 import type { Trip, Intake } from "@/lib/trips/schema";
 import { consumePlannerStream, type Preview } from "@/lib/trips/stream";
+type DestinationSuggestion = { name: string; kind: "city" | "country" | "continent" };
 const interests = [
   { name: "Nature", icon: Leaf },
   { name: "Food", icon: Utensils },
@@ -123,6 +124,7 @@ export function Workspace({
   const [form, setForm] = useState<Intake>(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [suggestions, setSuggestions] = useState<DestinationSuggestion[]>([]);
   const [trip, setTrip] = useState<Trip | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const generation = useRef<AbortController | null>(null);
@@ -142,6 +144,18 @@ export function Workspace({
   function update<K extends keyof Intake>(key: K, value: Intake[K]) {
     setForm((f) => ({ ...f, [key]: value }));
   }
+  useEffect(() => {
+    const query = form.destination.trim();
+    const controller = new AbortController();
+    const task = window.setTimeout(() => {
+      if (view !== "plan" || query.length < 2) { setSuggestions([]); return; }
+      fetch("/api/destinations?query=" + encodeURIComponent(query), { signal: controller.signal })
+        .then((response) => response.ok ? response.json() : { suggestions: [] })
+        .then((data) => { if (!controller.signal.aborted) setSuggestions(Array.isArray(data.suggestions) ? data.suggestions : []); })
+        .catch(() => {});
+    }, 180);
+    return () => { window.clearTimeout(task); controller.abort(); };
+  }, [form.destination, view]);
   async function load() {
     setLoading(true);
     try {
@@ -479,9 +493,14 @@ export function Workspace({
                         maxLength={120}
                         placeholder="A city, a country, or somewhere on your mind"
                         value={form.destination}
-                        onChange={(e) => update("destination", e.target.value)}
+                        onChange={(e) => { update("destination", e.target.value); setError(""); }}
                       />
                     </span>
+                    {suggestions.length > 0 && <div className="destination-suggestions" role="listbox" aria-label="Destination suggestions">
+                      {suggestions.map((suggestion) => <button type="button" role="option" aria-selected="false" key={suggestion.name} onClick={() => { update("destination", suggestion.name); setSuggestions([]); }}>
+                        {suggestion.name}<small>{suggestion.kind}</small>
+                      </button>)}
+                    </div>}
                   </label>
                   <div className="wide">
                     <DestinationStays destination={form.destination} />

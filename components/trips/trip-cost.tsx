@@ -45,12 +45,12 @@ export function TripCostLinks({ input }: { input: CostInput }) {
     </section>
   );
 }
-export function TripCostPage() {
+export function TripCostPage({ destinationValid = true }: { destinationValid?: boolean }) {
   const params = useSearchParams();
   const parsed = costInputSchema.safeParse(Object.fromEntries(params));
-  if (!parsed.success) return <main className="workspace cost-page">
+  if (!parsed.success || !destinationValid) return <main className="workspace cost-page">
     <h1>Add your trip details</h1>
-    <p className="subtext">A destination and departure date are required before we show an estimate.</p>
+    <p className="subtext">{parsed.success ? "Choose a listed city, town, country, or continent before we show an estimate." : "A destination and departure date are required before we show an estimate."}</p>
     <form action="/cost" method="get" className="panel cost-details-form">
       <label className="field">Destination<input name="destination" required minLength={2} maxLength={120} defaultValue={(params.get("destination") ?? "").slice(0, 120)} /></label>
       <label className="field">Departure date<input name="startDate" type="date" required /></label>

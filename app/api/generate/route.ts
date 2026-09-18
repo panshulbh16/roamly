@@ -8,6 +8,7 @@ import {
   ApiError,
 } from "@/lib/server/context";
 import { intakeSchema, type Trip } from "@/lib/trips/schema";
+import { resolveDestination, suggestDestinations } from "@/lib/trips/destinations.server";
 import type { PlannerEvent } from "@/lib/trips/stream";
 import { AnthropicPlanner, reserveUsage } from "@/lib/server/planner";
 import {
@@ -28,6 +29,13 @@ export async function POST(r: Request) {
         400,
         parsed.error.issues[0]?.message ?? "Please check your trip details.",
       );
+    const destination = resolveDestination(parsed.data.destination);
+    if (!destination) {
+      const suggestions = suggestDestinations(parsed.data.destination).map((match) => match.name);
+      throw new ApiError(422, suggestions.length
+        ? `Choose a listed destination. Did you mean: ${suggestions.join(", ")}?`
+        : "We could not find that city, town, country, or continent. Choose a listed destination.");
+    }
     searchId = await startSearch(db(), u.id, parsed.data);
     await reserveUsage(u.id);
     if (r.headers.get("accept")?.includes("application/x-ndjson")) {

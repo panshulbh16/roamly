@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 const root = fileURLToPath(new URL('..', import.meta.url));
-const vite = await createServer({ appType: 'custom', configFile: false, root, resolve: { alias: { '@': root } }, server: { middlewareMode: true } });
+const vite = await createServer({ appType: 'custom', configFile: false, root, resolve: { alias: { '@': root } }, server: { middlewareMode: true, ws: false } });
 after(() => vite.close());
 const cost = await vite.ssrLoadModule('/lib/trips/cost.ts');
 const input = { destination: 'Kyoto, Japan', startDate: '2026-12-20', days: 3, travelers: 2, budget: 'Comfort' };
