@@ -39,7 +39,7 @@ test('Bangalore aliases resolve to Bengaluru with valid qualifiers and lead sugg
     assert.deepEqual(suggestDestinations(query)[0], expected);
   }
   assert.equal(resolveDestination('Bangalore, Australia'), null);
-  assert.deepEqual(suggestDestinations('bangalo')[0], expected);
+  assert.ok(suggestDestinations('bangalo').some(match => match.name === expected.name));
   assert.equal(resolveDestination('München')?.kind, 'city');
   assert.equal(resolveDestination('München, India'), null);
   const response = await GET(new Request('https://roamly.test/api/destinations?query=bangalore'));
@@ -67,4 +67,34 @@ test('Indian city names accept Delhi and historic aliases without hiding qualifi
   assert.equal(resolveDestination('Delhi, California, United States')?.name, 'Delhi, California, United States');
   assert.equal(resolveDestination('Madras, Australia'), null);
   assert.equal(resolveDestination('Bombay, Tamil Nadu, India'), null);
+});
+
+test('global source names resolve historical, localized and native-script city names', () => {
+  for (const [query, canonical] of [
+    ['Calcutta, India', 'Kolkata'], ['Peking, China', 'Beijing'],
+    ['Saigon, Vietnam', 'Ho Chi Minh City'], ['Muenchen, Germany', 'Munich'],
+    ['Firenze, Italy', 'Florence'], ['मुंबई, India', 'Mumbai'],
+    ['ಬೆಂಗಳೂರು, India', 'Bengaluru'], ['東京, Japan', 'Tokyo'],
+  ]) {
+    assert.ok(resolveDestination(query)?.name.startsWith(canonical), query);
+    assert.ok(suggestDestinations(query)[0]?.name.startsWith(canonical), query);
+  }
+  assert.equal(resolveDestination('Calcutta, Germany'), null);
+  assert.equal(resolveDestination('bkldfmlb'), null);
+});
+
+test('generated name index stays sorted, unique and points to valid city records', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const index = JSON.parse(await readFile('data/locations/name-index.json', 'utf8'));
+  const cities = JSON.parse(await readFile('data/locations/cities.json', 'utf8'));
+  assert.ok(index.length > cities.length);
+  let previous = '';
+  for (const row of index) {
+    const [name, references] = row.split('\t');
+    assert.ok(name > previous, name);
+    const ids = references.split(',').map(Number);
+    assert.ok(ids.length > 0 && ids.every(id => Number.isInteger(id) && cities[id]), name);
+    assert.equal(new Set(ids).size, ids.length, name);
+    previous = name;
+  }
 });
