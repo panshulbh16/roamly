@@ -7,14 +7,14 @@ export type DestinationMatch = { name: string; kind: "city" | "country" | "conti
 const continents = ["Africa", "Antarctica", "Asia", "Europe", "North America", "Oceania", "South America"];
 const countryNames = Object.values(countries as Record<string, string>);
 const aliases: Record<string, string> = { usa: "United States", us: "United States", uk: "United Kingdom", uae: "United Arab Emirates", czechia: "Czech Republic", russia: "Russian Federation", "south korea": "South Korea" };
-const cityAliases: Record<string, string> = { bangalore: "1277333", munchen: "2867714" };
+const cityAliases: Record<string, string> = { bangalore: "1277333", bombay: "1275339", madras: "1264527", munchen: "2867714" };
 const clean = (value: string) => value.normalize("NFD").replace(/\p{M}/gu, "").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 const names = (city: City) => [city[1], city[2]].filter(Boolean).map(clean);
 const citiesByName = new Map<string, City[]>();
 for (const city of cities as City[]) for (const name of names(city)) citiesByName.set(name, [...(citiesByName.get(name) ?? []), city]);
 for (const [alias, id] of Object.entries(cityAliases)) {
   const city = (cities as City[]).find((entry) => entry[0] === id);
-  if (city) citiesByName.set(alias, [city]);
+  if (city) citiesByName.set(alias, [city, ...(citiesByName.get(alias) ?? [])]);
 }
 const cityLabel = (city: City) => {
   const country = (countries as Record<string, string>)[city[4]];

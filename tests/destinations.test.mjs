@@ -45,3 +45,26 @@ test('Bangalore aliases resolve to Bengaluru with valid qualifiers and lead sugg
   const response = await GET(new Request('https://roamly.test/api/destinations?query=bangalore'));
   assert.deepEqual((await response.json()).suggestions[0], expected);
 });
+
+test('Indian city names accept Delhi and historic aliases without hiding qualified overseas towns', async () => {
+  const cases = [
+    ['delhi', 'Delhi, India'],
+    ['Delhi, India', 'Delhi, India'],
+    ['New Delhi', 'New Delhi, Delhi, India'],
+    ['bombay', 'Mumbai, Maharashtra, India'],
+    ['Bombay, Maharashtra, India', 'Mumbai, Maharashtra, India'],
+    ['madras', 'Chennai, Tamil Nadu, India'],
+    ['MADRAS, India', 'Chennai, Tamil Nadu, India'],
+  ];
+  for (const [query, name] of cases) {
+    assert.deepEqual(resolveDestination(query), { name, kind: 'city' });
+    assert.equal(suggestDestinations(query)[0]?.name, name);
+    const response = await GET(new Request('https://roamly.test/api/destinations?query=' + encodeURIComponent(query)));
+    assert.equal((await response.json()).suggestions[0]?.name, name);
+  }
+  assert.equal(resolveDestination('Madras, Oregon, United States')?.name, 'Madras, Oregon, United States');
+  assert.equal(resolveDestination('Bombay, New Zealand')?.name, 'Bombay, Auckland, New Zealand');
+  assert.equal(resolveDestination('Delhi, California, United States')?.name, 'Delhi, California, United States');
+  assert.equal(resolveDestination('Madras, Australia'), null);
+  assert.equal(resolveDestination('Bombay, Tamil Nadu, India'), null);
+});
