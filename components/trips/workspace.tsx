@@ -48,13 +48,14 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
+import { starterItinerary } from "@/lib/trips/starter";
 import { sampleTrip } from "@/lib/trips/sample";
 import { getPackingCues, getTripSignature } from "@/lib/trips/insights";
 import { DestinationStays, StayFinder } from "@/components/trips/stay-finder";
 import { DestinationCarousel } from "@/components/trips/destination-carousel";
 import { BudgetSelector, TripCostResult } from "@/components/trips/trip-cost";
 import { DestinationAdvice } from "@/components/trips/destination-advice";
-import type { Trip, Intake } from "@/lib/trips/schema";
+import { intakeSchema, type Trip, type Intake, type Itinerary } from "@/lib/trips/schema";
 import { consumePlannerStream, type Preview } from "@/lib/trips/stream";
 type DestinationSuggestion = { name: string; kind: "city" | "country" | "continent" };
 const interests = [
@@ -129,8 +130,12 @@ export function Workspace({
   const [suggestions, setSuggestions] = useState<DestinationSuggestion[]>([]);
   const [trip, setTrip] = useState<Trip | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
+  const [starter, setStarter] = useState<Itinerary | null>(null);
   const generation = useRef<AbortController | null>(null);
-  useEffect(() => () => generation.current?.abort(), [view, searchParams]);
+  useEffect(() => () => {
+    generation.current?.abort();
+    generation.current = null;
+  }, [view, searchParams]);
   const [saved, setSaved] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(view === "trips");
   const [extra, setExtra] = useState(false);
@@ -173,6 +178,7 @@ export function Workspace({
     let task: number | undefined;
     let historyTask: number | undefined;
     let cancelled = false;
+    queueMicrotask(() => { if (!cancelled) { setStarter(null); setPreview(null); } });
     if (view === "trips")
       task = window.setTimeout(() => void load(), 0);
     if (view === "plan") {
@@ -226,13 +232,17 @@ export function Workspace({
       if (historyTask !== undefined) window.clearTimeout(historyTask);
     };
   }, [searchParams, view]);
-  async function generate(e: React.FormEvent) {
-    e.preventDefault();
+  async function generate(e?: { preventDefault: () => void }) {
+    e?.preventDefault();
+    const parsed = intakeSchema.safeParse(form);
+    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? "Check your trip details."); return; }
     if (generation.current) return;
     const controller = new AbortController();
     generation.current = controller;
     setBusy(true);
     setError("");
+    setStarter(starterItinerary(parsed.data));
+    setTrip(null);
     setPreview({});
     window.scrollTo({ top: 0, behavior: "smooth" });
     try {
@@ -242,16 +252,19 @@ export function Workspace({
         headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
         body: JSON.stringify(form),
       });
-      const completed = await consumePlannerStream(response, setPreview);
+      const completed = await consumePlannerStream(response, (next) => { if (!controller.signal.aborted) setPreview(next); });
       controller.signal.throwIfAborted();
+      setStarter(null);
       setTrip(completed);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) {
       if (!controller.signal.aborted) setError((e as Error).message);
     } finally {
-      generation.current = null;
-      setPreview(null);
-      setBusy(false);
+      if (generation.current === controller) {
+        generation.current = null;
+        setPreview(null);
+        setBusy(false);
+      }
     }
   }
   async function save() {
@@ -292,30 +305,35 @@ export function Workspace({
     setError("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
+  const draft = starter ?? preview;
   const cards = <DestinationCarousel />;
   const signature = getTripSignature(trip?.intake ?? form);
   return (
     <main className="workspace">
       <Toaster richColors />
       {!signedIn && <p className="small-tip">Plan a trip without signing in. <Link href="/auth?returnTo=%2F">Sign in</Link> to keep future searches in your history and save trips. Guest searches aren’t saved to an account.</p>}
-      {preview ? (
-        <div aria-busy="true">
-          <span className="eyebrow">Your itinerary is taking shape</span>
-          <h1 className="trip-title">{preview.title ?? `Planning ${form.destination}`}</h1>
-          {preview.summary && <p className="subtext">{preview.summary}</p>}
-          <p role="status"><LoaderCircle size={16} className="animate-spin inline" /> {preview.days?.length ?? 0} of {form.days} days started. Activities appear as they arrive.</p>
-          <div className="trip-actions"><button className="primary" disabled><Bookmark size={16} />Save trip</button></div>
+      {draft ? (
+        <div>
+          <span className="eyebrow">{starter ? "INSTANT STARTER · DRAFT" : "Your itinerary is taking shape"}</span>
+          <h1 className="trip-title">{draft.title ?? `Planning ${form.destination}`}</h1>
+          {draft.summary && <p className="subtext">{draft.summary}</p>}
+          {busy && <p role="status"><LoaderCircle size={16} className="animate-spin inline" /> Personalizing your trip… {preview?.days?.length ?? 0} of {form.days} days started. This starter will be replaced when the full itinerary is ready.</p>}
+          {error && <p role="alert" className="error">{error} Your starter outline is still available below.</p>}
+          <div className="trip-actions">
+            <button className="text-button" onClick={() => { generation.current?.abort(); generation.current = null; setStarter(null); setPreview(null); setBusy(false); setError(""); }}>Edit trip details</button>
+            {!busy && <button className="primary" onClick={() => void generate()}>Retry personalization</button>}
+          </div>
           <div className="trip-days">
-            {preview.days?.map((day, i) => (
+            {draft.days?.map((day, i) => (
               <section className="day-card" key={i}>
                 <div className="day-header"><span className="day-number">DAY {String(i + 1).padStart(2, "0")}</span><h2>{day.title}</h2></div>
                 {day.activities.map((activity, j) => <div className="activity" key={j}><small>{activity.time}</small><h3>{activity.title}</h3><p>{activity.description}</p><p>{activity.place}</p></div>)}
               </section>
             ))}
           </div>
-          <DestinationAdvice advice={preview.destinationAdvice} destination={form.destination} />
-          {preview.tips && <ul>{preview.tips.map((tip, i) => <li key={i}>{tip}</li>)}</ul>}
-          <p className="subtext">You can save or edit once the complete itinerary is ready.</p>
+          <DestinationAdvice advice={draft.destinationAdvice} destination={form.destination} />
+          {draft.tips && <ul>{draft.tips.map((tip, i) => <li key={i}>{tip}</li>)}</ul>}
+          <p className="subtext">You can save the personalized itinerary once it is ready.</p>
         </div>
       ) : trip ? (
         <>
