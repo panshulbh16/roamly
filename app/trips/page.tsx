@@ -9,7 +9,7 @@ export default async function Page() {
   return (
     <AppShell user={user}>
       {user ? (
-        <Workspace view="trips" />
+        <Workspace view="trips" signedIn />
       ) : (
         <SignIn
           user={null}

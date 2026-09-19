@@ -48,3 +48,16 @@ test('application shell renders guest and signed-in account navigation',()=>{
   const member=render(AppShell,{user:{id:'x',email:'x@test.example',displayName:'Ada Lovelace'}});
   assert.match(member,/Manage your account/);assert.match(member,/Ada/);
 });
+
+
+test('Plus is clearly a waitlist and guests get a sign-in route back to pricing', () => {
+  const guest = render(Workspace, { view: 'pricing', signedIn: false });
+  assert.match(guest, /Roamly Plus is not available yet/);
+  assert.match(guest, /href="\/auth\?returnTo=%2Fpricing"/);
+  assert.match(guest, /Sign in to join the Plus waitlist/);
+  assert.doesNotMatch(guest, /Join the Plus waitlist<svg/);
+  const member = render(Workspace, { view: 'pricing', signedIn: true });
+  assert.match(member, /Join the Plus waitlist/);
+  assert.doesNotMatch(member, /Sign in to join|Sign in<\/a> to keep future searches/);
+  assert.match(member, /No payment is collected/);
+});

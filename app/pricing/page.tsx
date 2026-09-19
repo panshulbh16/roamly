@@ -6,7 +6,7 @@ export default async function Page() {
   const u = await currentUser();
   return (
     <AppShell user={u}>
-      <Workspace view="pricing" />
+      <Workspace view="pricing" signedIn={!!u} />
     </AppShell>
   );
 }

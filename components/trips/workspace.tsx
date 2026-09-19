@@ -856,7 +856,7 @@ export function Workspace({
             <div>
               <h1>More room to roam.</h1>
               <p className="subtext">
-                Explore Roamly today. Help shape what comes next.
+                Roamly Plus is not available yet. You can join the waitlist below; the free planner is available now.
               </p>
             </div>
           </div>
@@ -900,7 +900,7 @@ export function Workspace({
                 included features will be announced before launch. No payment is
                 collected.
               </p>
-              <button
+              {!signedIn ? <Link href="/auth?returnTo=%2Fpricing" className="primary" style={{ marginTop: 28, width: "100%" }}>Sign in to join the Plus waitlist<ArrowRight size={15} /></Link> : <button
                 disabled={busy || joined}
                 className="primary"
                 style={{ marginTop: 28, width: "100%" }}
@@ -925,7 +925,7 @@ export function Workspace({
                     ? "Joining…"
                     : "Join the Plus waitlist"}
                 <ArrowRight size={15} />
-              </button>
+              </button>}
               <p className="form-note">
                 Uses your signed-in email. No charge, no commitment.
               </p>
