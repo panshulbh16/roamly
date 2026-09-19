@@ -45,7 +45,7 @@ function distance(a: string, b: string) {
 export function resolveDestination(value: string): DestinationMatch | null {
   const query = clean(value);
   if (!query) return null;
-  const alias = aliases[query];
+  const alias = Object.hasOwn(aliases, query) ? aliases[query] : undefined;
   const country = countryNames.find((name) => clean(name) === query) ?? alias;
   if (country) return { name: country, kind: "country" };
   const continent = continents.find((name) => clean(name) === query);

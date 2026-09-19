@@ -98,3 +98,20 @@ test('generated name index stays sorted, unique and points to valid city records
     previous = name;
   }
 });
+
+test('object property names cannot masquerade as real destinations', async () => {
+  for (const query of ['constructor', 'toString', 'hasOwnProperty']) {
+    assert.equal(resolveDestination(query), null, query);
+    const data = await (await GET(new Request('https://roamly.test/api/destinations?query=' + query))).json();
+    assert.equal(data.resolved, null);
+    assert.ok(data.suggestions.every(match => typeof match.name === 'string'));
+  }
+});
+test('punctuation-normalized names still use catalogue records', () => {
+  assert.deepEqual(resolveDestination('__proto__'), resolveDestination('proto'));
+  assert.equal(typeof resolveDestination('__proto__')?.name, 'string');
+});
+test('oversized destination queries are rejected before catalogue lookup', async () => {
+  const response = await GET(new Request('https://roamly.test/api/destinations?query=' + 'a'.repeat(50000)));
+  assert.equal(response.status, 400);
+});

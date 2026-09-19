@@ -192,3 +192,17 @@ test('same-currency India estimate never calls the exchange-rate provider', asyn
     assert.equal((await (await GET(new Request('https://roamly.test/api/currency?base=INR&currency=USD'))).json()).rate, 0.011);
   } finally { globalThis.fetch = original; }
 });
+
+test('custom allowances reject missing categories, non-numbers and extreme values', () => {
+  const valid = { stay: 2000, food: 500, transport: 250, activities: 0 };
+  for (const key of Object.keys(valid)) {
+    for (const value of [undefined, null, '100', NaN, Infinity, -1, 1000001]) {
+      assert.throws(() => cost.estimateCost(input, 'Mid cost', { ...valid, [key]: value }), `${key}: ${value}`);
+    }
+    const missing = { ...valid }; delete missing[key];
+    assert.throws(() => cost.estimateCost(input, 'Mid cost', missing), key);
+  }
+  const free = cost.estimateCost({ ...input, days: 10, travelers: 10 }, 'Higher cost', { stay: 0, food: 0, transport: 0, activities: 0 });
+  assert.equal(free.high, 0);
+  assert.equal(free.low, 0);
+});

@@ -118,6 +118,7 @@ export async function* streamLines(body: ReadableStream<Uint8Array>) {
       buffer += decoder.decode(value, { stream: !done });
       let end: number;
       while ((end = buffer.indexOf("\n")) >= 0) {
+        if (end > 128000) throw new Error("Stream exceeded its size limit.");
         yield buffer.slice(0, end).replace(/\r$/, "");
         buffer = buffer.slice(end + 1);
       }

@@ -56,3 +56,9 @@ test('first activity appears before the rest of its day finishes', () => {
   const complete = prefix + ',' + JSON.stringify({ ...activity, time: 'Evening' }) + ']}]}';
   assert.equal(itineraryPreview(complete).days[0].activities.length, 2);
 });
+
+test('oversized complete stream lines cannot bypass the buffer limit', async () => {
+  for (const suffix of ['', '\n', '\r\n']) {
+    await assert.rejects(async () => { for await (const line of streamLines(new Response('x'.repeat(128001) + suffix).body)) void line; }, /size limit/);
+  }
+});

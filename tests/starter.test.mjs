@@ -80,3 +80,32 @@ test('starter appears before network, survives failure, ignores partial output a
     nextReject(new Error('Second request failed')); await next;
   } finally { globalThis.fetch = previousFetch; globalThis.window = previousWindow; }
 });
+
+test('unrecognized and inherited interest names cannot crash an instant starter', () => {
+  for (const interests of [[], ['constructor'], ['__proto__'], ['toString'], ['Food', 'constructor'], ['not-an-interest']]) {
+    const draft = starterItinerary({ ...input, interests });
+    assert.equal(draft.days.length, input.days);
+    assert.ok(draft.days.every(day => day.activities.every(activity => typeof activity.title === 'string')));
+  }
+});
+
+test('HTTP errors, corrupt chunks and truncated completions preserve the starter; duplicate submits make one request', async () => {
+  const previousFetch = globalThis.fetch, previousWindow = globalThis.window;
+  globalThis.window = { scrollTo() {} };
+  try {
+    for (const response of [Response.json({ error: 'Daily limit' }, { status: 429 }), new Response('broken json\n'), new Response('{"type":"complete","trip":{}}\n'), new Response('{"type":"preview","itinerary":{"title":"partial"}}\n')]) {
+      state.length = refs.length = 0; render(); state[0] = input;
+      let calls = 0, release;
+      globalThis.fetch = () => { calls++; return new Promise(resolve => { release = resolve; }); };
+      const submit = nodes(render()).find(n => n.type === 'form' && n.props.onSubmit).props.onSubmit;
+      const first = submit({ preventDefault() {} });
+      await submit({ preventDefault() {} });
+      assert.equal(calls, 1);
+      release(response); await first;
+      const tree = render();
+      assert.match(text(tree), /INSTANT STARTER/);
+      assert.ok(nodes(tree).some(n => n.props?.role === 'alert'));
+      assert.ok(button(tree, 'Retry personalization'));
+    }
+  } finally { globalThis.fetch = previousFetch; globalThis.window = previousWindow; }
+});

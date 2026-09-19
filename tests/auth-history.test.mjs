@@ -254,7 +254,7 @@ test('intake rejects every invalid boundary before creating history',async()=>{
 test('unknown destinations are rejected before AI usage and history storage',async()=>{
   user('unknown-destination-user');
   const before=sql.prepare("SELECT count(*) AS n FROM search_history WHERE owner='unknown-destination-user'").get().n;
-  for(const destination of ['bkldfmlb','Tokyo / Kyoto','Café, Québec — 旅']) {
+  for(const destination of ['bkldfmlb','Tokyo / Kyoto','Café, Québec — 旅','constructor','hasOwnProperty']) {
     const response=await app.generate.POST(req('/api/generate',{...input,destination}));
     assert.equal(response.status,422);
     assert.match((await response.json()).error,/city, town, country, or continent/);

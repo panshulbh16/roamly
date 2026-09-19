@@ -46,13 +46,14 @@ export function estimateCost(input: CostInput, band: CostBand, custom?: DailyAll
   const factor = { "Lower cost": 0.6, "Mid cost": 1, "Higher cost": 1.6 }[band];
   const domestic = destinationBand(trip.destination).country === "India";
   const rates = custom ?? dailyAllowances(trip);
-  if (Object.values(rates).some(value => !Number.isFinite(value) || value < 0 || value > 1000000)) throw new Error("Invalid daily allowance");
+  const keys = Object.keys(daily.Comfort) as (keyof DailyAllowances)[];
+  if (keys.some(key => !Number.isFinite(rates[key]) || rates[key] < 0 || rates[key] > 1000000)) throw new Error("Invalid daily allowance");
   // India defaults already reflect the lower-cost category.
   const multiplier = custom ? 1 : domestic ? factor / 0.6 : factor;
   const nights = trip.days - 1;
   const rooms = Math.ceil(trip.travelers / 2);
   const quantities = { stay: nights * rooms, food: trip.days * trip.travelers, transport: trip.days * trip.travelers, activities: trip.days * trip.travelers };
-  const rows = (Object.keys(rates) as (keyof typeof rates)[]).map(key => ({ key, low: Math.round(rates[key] * multiplier * quantities[key] * 0.8), high: Math.round(rates[key] * multiplier * quantities[key] * 1.3) }));
+  const rows = keys.map(key => ({ key, low: Math.round(rates[key] * multiplier * quantities[key] * 0.8), high: Math.round(rates[key] * multiplier * quantities[key] * 1.3) }));
   const subtotal = rows.reduce((s, r) => ({ low: s.low + r.low, high: s.high + r.high }), { low: 0, high: 0 });
   const buffer = { key: "buffer", low: Math.round(subtotal.low * 0.1), high: Math.round(subtotal.high * 0.1) };
   return { currency: domestic ? "INR" : "USD", rows: [...rows, buffer], low: subtotal.low + buffer.low, high: subtotal.high + buffer.high, nights, rooms };

@@ -237,11 +237,12 @@ export function Workspace({
     const parsed = intakeSchema.safeParse(form);
     if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? "Check your trip details."); return; }
     if (generation.current) return;
+    const starter = starterItinerary(parsed.data);
     const controller = new AbortController();
     generation.current = controller;
     setBusy(true);
     setError("");
-    setStarter(starterItinerary(parsed.data));
+    setStarter(starter);
     setTrip(null);
     setPreview({});
     window.scrollTo({ top: 0, behavior: "smooth" });

@@ -11,7 +11,7 @@ export function starterItinerary(input: Intake): Itinerary {
     Photography: ["Leave time for photos", "Pick a public viewpoint; confirm access and photography rules."],
     Relaxation: ["Keep an unhurried break", "Leave space to rest near your accommodation."],
   };
-  const selected = trip.interests.filter(interest => ideas[interest]);
+  const selected = trip.interests.filter(interest => Object.hasOwn(ideas, interest));
   const focus = selected.length ? selected : ["Culture", "Relaxation"];
   return {
     title: `Your ${trip.days}-day starter for ${trip.destination}`,
