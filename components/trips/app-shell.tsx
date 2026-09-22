@@ -13,6 +13,7 @@ import {
   ChevronDown,
   History,
   UserRound,
+  UsersRound,
 } from "lucide-react";
 import {
   SidebarProvider,
@@ -53,6 +54,7 @@ export function AppShell({
               { href: "/trips", icon: Map, label: "My trips" },
               { href: "/history", icon: History, label: "History" },
               { href: "/explore", icon: Compass, label: "Explore" },
+              { href: "/together", icon: UsersRound, label: "Travel together" },
             ].map((n) => (
               <Link
                 className={path === n.href ? "active" : ""}

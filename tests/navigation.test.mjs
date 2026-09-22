@@ -25,7 +25,7 @@ test('route changes reset the open itinerary and mobile sidebar together', () =>
 });
 test.after(() => { delete globalThis.__roamlyNavigationTest; });
 
-test('main navigation prefetches its four routes', () => {
+test('main navigation prefetches its five routes', () => {
   const shell = AppShell({ user: null, children: null });
   const links = [];
   function visit(node) {
@@ -35,5 +35,5 @@ test('main navigation prefetches its four routes', () => {
     visit(node.props?.children);
   }
   visit(shell);
-  assert.deepEqual(links, ['/', '/trips', '/history', '/explore']);
+  assert.deepEqual(links, ['/', '/trips', '/history', '/explore', '/together']);
 });

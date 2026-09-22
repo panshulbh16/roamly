@@ -19,7 +19,7 @@ export function TripFooter() {
           <DialogTitle>{legal}</DialogTitle>
           <DialogDescription>
             {legal === "Privacy" ? (
-              "Roamly stores submitted searches and saved itineraries against your signed-in account. Delete searches in History and saved trips in My trips. Google/email sign-in is handled by Supabase when connected. Your trip preferences are sent to the AI provider only when you request generation. Joining the Plus list stores your account email. Delete individual saved trips in My trips. Avoid entering sensitive medical or personal details. Public-launch privacy and support details are still being finalized."
+              "Roamly stores submitted searches and saved itineraries against your signed-in account. Delete searches in History and saved trips in My trips. Google/email sign-in is handled by Supabase when connected. Your trip preferences are sent to the AI provider only when you request generation. Joining the Plus list stores your account email. Delete individual saved trips in My trips. Avoid entering sensitive medical or personal details. Travel Together stores your drafts, published itineraries, join requests and reports. Published itineraries and your chosen host name are public. Introductions are visible to the host; private meeting details are visible to approved travellers. Withdrawing or cancellation retains the activity record. Public-launch privacy and support details are still being finalized."
             ) : legal === "Photography" ? (
               <>
                 Photography by{" "}

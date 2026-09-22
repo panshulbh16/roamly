@@ -415,3 +415,57 @@ test('Razorpay checkout verifies price, reuses subscriptions, verifies signed we
     assert.throws(()=>app.billing.checkoutUrl('https://evil.example/pay'));
   }finally{globalThis.fetch=original;for(const key of Object.keys(settings))delete context.env[key];}
 });
+
+test('Travel Together: Plus hosting, private drafts, requests, capacity and lifecycle',async()=>{
+  const id=crypto.randomUUID(), date=new Date(Date.now()+86400000).toISOString().slice(0,10);
+  const trip={id,title:'Bareilly to Nainital',hostName:'Public Host',city:'Bareilly, UP',destination:'Nainital',startDate:date,capacity:1,summary:'A relaxed trip. Estimate includes travel.',cost:4000,days:['Morning: depart. Afternoon: lake walk.'],meeting:'PRIVATE phone and exact meeting point'};
+  const post=(action,extra={})=>app.together.POST(req('/api/together',{action,id,...extra}));
+  const get=()=>app.together.GET(req('/api/together?id='+id,undefined,'GET'));
+  const guest=()=>{context.headers=new Headers();};
+  const plus=()=>sql.prepare("INSERT INTO subscriptions (owner,status,current_end,paid_count) VALUES (?,'active',?,1)").run('together-host',Math.floor(Date.now()/1000)+86400);
+  try{
+    guest();assert.equal((await post('save',{trip})).status,401);
+    user('together-host');assert.equal((await post('save',{trip})).status,403);plus();
+    const foreign=req('/api/together',{action:'save',id,trip});foreign.headers.set('origin','https://foreign.test');assert.equal((await app.together.POST(foreign)).status,403);
+    for(const patch of [{capacity:0},{capacity:21},{days:[]},{startDate:'2026-02-30'},{startDate:'2020-01-01'},{cost:-1},{title:'  '},{meeting:'x'.repeat(2001)}])assert.equal((await post('save',{trip:{...trip,...patch}})).status,400);
+    assert.equal((await post('save',{trip})).status,200);
+    assert.equal((await post('save',{trip})).status,200,'retry saves same draft');
+    guest();assert.equal((await get()).status,404);
+    user('together-stranger');assert.equal((await post('publish')).status,404);
+    user('together-host');assert.equal((await post('close')).status,409,'cannot make unpublished draft public by closing it');
+    assert.equal((await post('publish')).status,200);
+    assert.equal((await post('save',{trip:{...trip,title:'Bait and switch'}})).status,409);
+    assert.equal((await post('join',{name:'Host',message:'Joining my own trip'})).status,400);
+    guest();let publicView=await (await get()).json();assert.equal(publicView.trip.meeting,undefined);assert.equal(publicView.trip.owner,undefined);assert.deepEqual(publicView.requests,[]);
+    const list=await (await app.together.GET(req('/api/together?city=bareilly&destination=nain&date='+date,undefined,'GET'))).json();assert.ok(list.trips.some(t=>t.id===id));assert.ok(!JSON.stringify(list).includes('PRIVATE'));
+    assert.equal((await app.together.GET(req('/api/together?mine=1',undefined,'GET'))).status,401);
+    user('together-one');assert.equal((await post('join',{name:'One',message:'Love quiet lake walks'})).status,200);assert.equal((await post('join',{name:'One',message:'Love quiet lake walks'})).status,409);
+    assert.equal((await post('approve',{member:'together-one'})).status,403);assert.equal((await post('meeting',{meeting:'hijack'})).status,403);
+    assert.equal((await (await get()).json()).trip.meeting,undefined);
+    user('together-two');assert.equal((await post('join',{name:'Two',message:'Would love to join you'})).status,200);
+    user('together-host');let detail=await (await get()).json();assert.equal(detail.requests.length,2);
+    const approvals=await Promise.all([post('approve',{member:'together-one'}),post('approve',{member:'together-two'})]);assert.deepEqual(approvals.map(r=>r.status).sort(),[200,409]);
+    const approved=sql.prepare("SELECT member FROM outing_requests WHERE trip_id=? AND status='approved'").get(id).member;
+    user(approved);detail=await (await get()).json();assert.equal(detail.trip.meeting,trip.meeting);assert.deepEqual(detail.requests,[]);
+    assert.equal((await post('report',{reason:'A concern that should stay private'})).status,200);assert.equal(sql.prepare('SELECT count(*) n FROM outing_reports WHERE trip_id=?').get(id).n,1);
+    user('together-host');sql.prepare("UPDATE subscriptions SET current_end=0 WHERE owner='together-host'").run();
+    assert.equal((await post('meeting',{meeting:'Updated private note'})).status,200,'expired host can coordinate');
+    assert.equal((await post('remove',{member:approved})).status,200,'expired host can remove');
+    user(approved);assert.equal((await (await get()).json()).trip.meeting,undefined);
+    user('together-host');assert.equal((await post('close')).status,200);assert.equal((await post('publish')).status,403,'expired host cannot republish');
+    const other=approved==='together-one'?'together-two':'together-one';assert.equal((await post('approve',{member:other})).status,409);
+    assert.equal((await post('cancel')).status,200);assert.equal((await (await get()).json()).trip.status,'cancelled');
+    user(other);assert.equal((await post('withdraw')).status,200);assert.equal((await (await get()).json()).trip.requestStatus,'withdrawn');
+  } finally {
+    sql.prepare('DELETE FROM outing_reports WHERE trip_id=?').run(id);sql.prepare('DELETE FROM outing_requests WHERE trip_id=?').run(id);sql.prepare('DELETE FROM outings WHERE id=?').run(id);sql.prepare("DELETE FROM subscriptions WHERE owner='together-host'").run();guest();
+  }
+});
+
+test('discarding a private Together draft never exposes it',async()=>{
+  const id=crypto.randomUUID();user('draft-host');
+  sql.prepare("INSERT INTO outings (id,owner,city,destination,start_date,capacity,payload,meeting,created_at) VALUES (?,?,'Bareilly','Nainital','2099-01-01',1,'{}','secret','today')").run(id,'draft-host');
+  try {
+    assert.equal((await app.together.POST(req('/api/together',{id,action:'cancel'}))).status,200);
+    context.headers=new Headers();assert.equal((await app.together.GET(req('/api/together?id='+id,undefined,'GET'))).status,404);
+  } finally {sql.prepare('DELETE FROM outings WHERE id=?').run(id);}
+});

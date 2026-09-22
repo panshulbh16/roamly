@@ -33,6 +33,7 @@ export function Pricing({ signedIn, billingEnabled = false }: { signedIn: boolea
                   "Edit and save sample itineraries",
                   "Print your day-by-day plans",
                   "Personalized AI when available",
+                  "Browse shared trips and request to join",
                 ].map((t) => (
                   <li key={t}>
                     <Check />
@@ -56,7 +57,7 @@ export function Pricing({ signedIn, billingEnabled = false }: { signedIn: boolea
                 ₹499 / month
               </div>
               <p className="subtext">
-                20 AI plans per day. Replace individual days, edit your itinerary, share snapshots and export a PDF. {billingEnabled ? "Payments and renewals are handled by Razorpay." : "Checkout is not open yet. No payment is collected."}
+                20 AI plans per day. Host city-based trips with Travel Together, publish your own itinerary and approve travellers. Replace individual days, edit your itinerary, share snapshots and export a PDF. {billingEnabled ? "Payments and renewals are handled by Razorpay." : "Checkout is not open yet. No payment is collected."}
               </p>
               {billingEnabled ? (signedIn ? <BillingControls /> : <Link href="/auth?returnTo=%2Fpricing" className="primary">Sign in for Plus</Link>) : !signedIn ? <Link href="/auth?returnTo=%2Fpricing" className="primary" style={{ marginTop: 28, width: "100%" }}>Sign in to join the Plus waitlist<ArrowRight size={15} /></Link> : <button
                 disabled={busy || joined}

@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index, primaryKey } from "drizzle-orm/sqlite-core";
 export const trips = sqliteTable(
   "trips",
   {
@@ -45,3 +45,23 @@ export const subscriptions = sqliteTable("subscriptions", {
   paidCount: integer("paid_count").notNull().default(0),
   checkedAt: integer("checked_at").notNull().default(0),
 }, t => [index("idx_subscription_id").on(t.subscriptionId)]);
+
+export const outings = sqliteTable("outings", {
+  id: text("id").primaryKey(), owner: text("owner").notNull(),
+  city: text("city").notNull(), destination: text("destination").notNull(),
+  startDate: text("start_date").notNull(), capacity: integer("capacity").notNull(),
+  status: text("status").notNull().default("draft"),
+  payload: text("payload").notNull(), meeting: text("meeting").notNull(),
+  createdAt: text("created_at").notNull(),
+}, t => [index("idx_outings_owner").on(t.owner), index("idx_outings_status_date").on(t.status,t.startDate)]);
+export const outingRequests = sqliteTable("outing_requests", {
+  tripId: text("trip_id").notNull().references(()=>outings.id),
+  member: text("member").notNull(), name: text("name").notNull(),
+  message: text("message").notNull(), status: text("status").notNull().default("pending"),
+  createdAt: text("created_at").notNull(),
+}, t => [primaryKey({columns:[t.tripId,t.member]}),index("idx_outing_requests_member").on(t.member)]);
+export const outingReports = sqliteTable("outing_reports", {
+  tripId: text("trip_id").notNull().references(()=>outings.id),
+  reporter: text("reporter").notNull(), reason: text("reason").notNull(),
+  createdAt: text("created_at").notNull(),
+}, t => [primaryKey({columns:[t.tripId,t.reporter]})]);
