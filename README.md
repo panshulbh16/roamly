@@ -1,6 +1,24 @@
-# Roamly
+# 🧭 Roamly
 
-An early-access travel planning app. This release is private and does not collect payments. Do not describe it as a fully launched commercial service.
+**An AI travel planner that turns a rough idea into a structured, day-by-day itinerary.** Give it a destination, dates, pace and interests — Claude drafts a validated, streamed itinerary, and every trip is saved privately to its owner.
+
+> **Status:** early access · private deployment · no payments collected. Existing itineraries are unverified AI suggestions, not booked plans.
+
+![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)
+![D1](https://img.shields.io/badge/Cloudflare-D1-F38020?logo=cloudflare&logoColor=white)
+![Drizzle ORM](https://img.shields.io/badge/Drizzle-ORM-C5F74F?logo=drizzle&logoColor=black)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
+![Claude](https://img.shields.io/badge/AI-Claude-D97757)
+
+---
+
+## Highlights
+
+- **Runs on the edge** — a single Cloudflare Worker with a native D1 (SQLite) database, close to the user.
+- **Structured, streamed AI** — Claude returns a strict itinerary JSON that is streamed to the UI as it generates and validated with Zod on the way in *and* out.
+- **Quota-guarded, fail-closed** — an atomic per-user daily and global monthly request budget, charged on attempt to defeat retry-spend loops; AI is disabled unless fully configured.
+- **Owner-scoped by construction** — every saved-record query filters to the authenticated owner, so no trip is reachable by ID alone.
+- **Security-first** — untrusted user input is treated as data, never instructions; same-origin mutations; HttpOnly sessions with server-side verification.
 
 ## Architecture
 - `app/`: thin server pages and API routes.
