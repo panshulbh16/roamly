@@ -4,6 +4,7 @@ import { stayCollections } from "./stays";
 
 export const styles = ["Budget", "Comfort", "Luxury"] as const;
 export const costInputSchema = z.object({
+  homeCity: z.string().trim().max(100).optional(),
   destination: z.string().trim().min(2).max(120),
   startDate: intakeSchema.shape.startDate.refine(value => value.length > 0, "Choose a departure date"),
   days: z.coerce.number().int().min(1).max(10),
@@ -40,7 +41,14 @@ export type DailyAllowances = typeof daily.Comfort;
 export function dailyAllowances(input: CostInput): DailyAllowances {
   return { ...(destinationBand(input.destination).country === "India" ? indiaDaily : daily)[input.budget] };
 }
-export function estimateCost(input: CostInput, band: CostBand, custom?: DailyAllowances) {
+export const journeySchema = z.object({
+  rooms: z.number().int().min(1).max(10),
+  mode: z.enum(["Not included", "Train", "Flight", "Bus", "Car"]),
+  fare: z.number().finite().min(0).max(1000000),
+});
+export type Journey = z.infer<typeof journeySchema>;
+export function estimateCost(input: CostInput, band: CostBand, custom?: DailyAllowances, journey?: Journey) {
+  const travel = journey ? journeySchema.parse(journey) : undefined;
   const trip = costInputSchema.parse(input);
   if (!bands.includes(band)) throw new Error("Invalid cost band");
   const factor = { "Lower cost": 0.6, "Mid cost": 1, "Higher cost": 1.6 }[band];
@@ -51,15 +59,20 @@ export function estimateCost(input: CostInput, band: CostBand, custom?: DailyAll
   // India defaults already reflect the lower-cost category.
   const multiplier = custom ? 1 : domestic ? factor / 0.6 : factor;
   const nights = trip.days - 1;
-  const rooms = Math.ceil(trip.travelers / 2);
+  const rooms = travel?.rooms ?? Math.ceil(trip.travelers / 2);
+  if (rooms > trip.travelers) throw new Error("Rooms cannot exceed travelers");
   const quantities = { stay: nights * rooms, food: trip.days * trip.travelers, transport: trip.days * trip.travelers, activities: trip.days * trip.travelers };
-  const rows = keys.map(key => ({ key, low: Math.round(rates[key] * multiplier * quantities[key] * 0.8), high: Math.round(rates[key] * multiplier * quantities[key] * 1.3) }));
+  const rows: { key: string; low: number; high: number }[] = keys.map(key => ({ key, low: Math.round(rates[key] * multiplier * quantities[key] * 0.8), high: Math.round(rates[key] * multiplier * quantities[key] * 1.3) }));
+  if (travel && travel.mode !== "Not included") {
+    const fare = Math.round(travel.fare * (travel.mode === "Car" ? 1 : trip.travelers));
+    rows.push({ key: "journey", low: fare, high: fare });
+  }
   const subtotal = rows.reduce((s, r) => ({ low: s.low + r.low, high: s.high + r.high }), { low: 0, high: 0 });
   const buffer = { key: "buffer", low: Math.round(subtotal.low * 0.1), high: Math.round(subtotal.high * 0.1) };
   return { currency: domestic ? "INR" : "USD", rows: [...rows, buffer], low: subtotal.low + buffer.low, high: subtotal.high + buffer.high, nights, rooms };
 }
 export function costUrl(input: CostInput, budget = input.budget) {
-  return "/cost?" + new URLSearchParams({ destination: input.destination, startDate: input.startDate, days: String(input.days), travelers: String(input.travelers), budget }).toString();
+  return "/cost?" + new URLSearchParams({ destination: input.destination, startDate: input.startDate, days: String(input.days), travelers: String(input.travelers), budget, ...(input.homeCity ? {homeCity: input.homeCity} : {}) }).toString();
 }
 export const currencies = Intl.supportedValuesOf("currency");
 export function currencyForCountry(country: string | undefined) {

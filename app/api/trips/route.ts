@@ -65,6 +65,7 @@ export async function DELETE(r: Request) {
     const parsed = z.object({ id: z.string().uuid() }).safeParse(await body(r));
     if (!parsed.success)
       throw new ApiError(400, "Choose a trip to delete.");
+    await db().prepare("DELETE FROM trip_shares WHERE trip_id=? AND owner=?").bind(parsed.data.id, u.id).run();
     await db()
       .prepare("DELETE FROM trips WHERE id=? AND owner=?")
       .bind(parsed.data.id, u.id)

@@ -339,3 +339,79 @@ test('email OTP uses the real SDK and establishes a server-verified HttpOnly ses
 test('Google start stores PKCE and callback exchanges its code with the mocked provider',async()=>{jar.clear();const start=await app.google.POST(req('/api/auth/google',{returnTo:'/history'}));assert.equal(start.status,200);const {url}=await start.json();const u=new URL(url);assert.equal(u.origin,'https://fixture.supabase.co');assert.equal(u.searchParams.get('provider'),'google');assert.equal(u.searchParams.get('code_challenge_method'),'s256');assert.ok(u.searchParams.get('code_challenge'));assert.ok(Array.from(jar.keys()).some(k=>k.includes('code-verifier')));const callback=await app.callback.GET(req('/auth/callback?code=fixture-code',undefined,'GET'));assert.equal(callback.status,303);assert.equal(callback.headers.get('Location'),origin+'/history');assert.equal((await app.identity.currentUser()).id,'supabase:'+mockUser.id);});
 test('expired external identity cannot silently fall back to another platform account',async()=>{jar.clear();jar.set('roamly-auth-provider',{value:'supabase',options:{}});user();assert.equal(await app.identity.currentUser(),null);});
 test('external sign-out revokes session through provider and clears cookies',async()=>{jar.clear();await app.verify.POST(req('/api/auth/verify',{email:mockUser.email,token:'123456'}));assert.equal((await app.logout.POST(req('/api/auth/logout',{}))).status,200);assert.equal(await app.identity.currentUser(),null);assert.ok(!Array.from(jar.keys()).some(k=>k.startsWith('sb-')));assert.ok(calls.includes('/auth/v1/logout'));globalThis.fetch=realFetch;context.env.SUPABASE_AUTH_ENABLED='false';jar.clear();});
+
+test('share snapshots omit private fields, isolate owners, revoke links and follow trip deletion',async()=>{
+  jar.clear();user('share-owner');
+  const trip={...structuredClone(app.sample.sampleTrip),id:crypto.randomUUID()};
+  trip.intake.needs='PRIVATE preferences';trip.intake.homeCity='PRIVATE home';
+  const response=await app.shares.POST(req('/api/shares',trip));
+  assert.equal(response.status,200);const {id}=await response.json();
+  const row=sql.prepare('SELECT payload FROM trip_shares WHERE id=?').get(id);
+  assert.doesNotMatch(row.payload,/PRIVATE|homeCity|needs|startDate|email|owner/);
+  assert.equal(JSON.parse(row.payload).itinerary.title,trip.itinerary.title);
+  user('other');
+  assert.deepEqual((await(await app.shares.GET(req('/api/shares?tripId='+trip.id,undefined,'GET'))).json()).shares,[]);
+  await app.shares.DELETE(req('/api/shares',{id},'DELETE'));
+  assert.ok(sql.prepare('SELECT id FROM trip_shares WHERE id=?').get(id));
+  context.headers=new Headers();assert.equal((await app.shares.POST(req('/api/shares',trip))).status,401);
+  user('share-owner');
+  await app.shares.DELETE(req('/api/shares',{id},'DELETE'));
+  assert.equal(sql.prepare('SELECT id FROM trip_shares WHERE id=?').get(id),undefined);
+  await app.shares.POST(req('/api/shares',trip));
+  await app.trips.POST(req('/api/trips',trip));
+  await app.trips.DELETE(req('/api/trips',{id:trip.id},'DELETE'));
+  assert.equal(sql.prepare('SELECT count(*) n FROM trip_shares WHERE trip_id=?').get(trip.id).n,0);
+});
+
+test('single-day regeneration keeps original needs and date, rejects invalid days before spending',async()=>{
+  const original=globalThis.fetch;user('day-editor');
+  Object.assign(context.env,{ANTHROPIC_API_KEY:'fixture',ANTHROPIC_MODEL:'fixture',AI_MONTHLY_REQUEST_LIMIT:'1000'});
+  const trip=structuredClone(app.sample.sampleTrip);trip.intake.startDate='2026-12-31';
+  try{
+    globalThis.fetch=async(_,options)=>{const payload=JSON.parse(JSON.parse(options.body).messages[0].content);assert.equal(payload.days,1);assert.equal(payload.startDate,'2027-01-01');assert.equal(payload.needs,trip.intake.needs);assert.equal(payload.replacement.dayNumber,2);assert.ok(payload.replacement.otherDays.length);return Response.json({content:[{type:'text',text:JSON.stringify({...trip.itinerary,days:[trip.itinerary.days[1]],destinationAdvice})}]});};
+    assert.equal((await app.regenerate.POST(req('/api/regenerate',{trip,day:99}))).status,400);
+    assert.equal((await app.regenerate.POST(req('/api/regenerate',{trip,day:1}))).status,200);
+    assert.equal(trip.itinerary.days.length,3);
+  }finally{globalThis.fetch=original;for(const key of ['ANTHROPIC_API_KEY','ANTHROPIC_MODEL','AI_MONTHLY_REQUEST_LIMIT'])delete context.env[key];}
+});
+
+test('Razorpay checkout verifies price, reuses subscriptions, verifies signed webhooks and enforces paid limits',async()=>{
+  jar.clear();user('subscriber');const original=globalThis.fetch;
+  const settings={RAZORPAY_ENABLED:'true',RAZORPAY_KEY_ID:'fixture',RAZORPAY_KEY_SECRET:'fixture',RAZORPAY_PLAN_ID:'plan_fixture',RAZORPAY_WEBHOOK_SECRET:'webhook-fixture',ANTHROPIC_API_KEY:'fixture',ANTHROPIC_MODEL:'fixture',AI_MONTHLY_REQUEST_LIMIT:'10000'};
+  Object.assign(context.env,settings);
+  let amount=49900,creates=0,cancels=0;
+  let sub={id:'sub_fixture',plan_id:'plan_fixture',status:'created',paid_count:0,current_end:null,quantity:1,short_url:'https://rzp.io/test'};
+  globalThis.fetch=async(url,options)=>{
+    const path=new URL(url).pathname;
+    if(path==='/v1/plans/plan_fixture')return Response.json({id:'plan_fixture',period:'monthly',interval:1,item:{amount,currency:'INR'}});
+    if(path==='/v1/subscriptions'){creates++;return Response.json(sub);}
+    if(path==='/v1/subscriptions/sub_fixture/cancel'){cancels++;assert.equal(JSON.parse(options.body).cancel_at_cycle_end,true);return Response.json(sub);}
+    if(path==='/v1/subscriptions/sub_fixture')return Response.json(sub);
+    throw Error('Unexpected billing path');
+  };
+  try{
+    amount=50000;assert.equal((await app.checkout.POST(req('/api/billing/checkout',{}))).status,503);assert.equal(creates,0);
+    amount=49900;
+    assert.equal((await app.checkout.POST(req('/api/billing/checkout',{}))).status,200);
+    assert.equal((await app.checkout.POST(req('/api/billing/checkout',{}))).status,200);assert.equal(creates,1);
+    assert.equal(app.billing.hasPlus(await app.billing.membership('subscriber')),false);
+    const event=JSON.stringify({payload:{subscription:{entity:{id:'sub_fixture',status:'active'}}}});
+    const bad=new Request(origin+'/api/billing/webhook',{method:'POST',headers:{'x-razorpay-signature':'0'.repeat(64)},body:event});
+    assert.equal((await app.webhook.POST(bad)).status,401);
+    sub={...sub,status:'active',paid_count:1,current_end:Math.floor(Date.now()/1000)+3600};
+    const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(settings.RAZORPAY_WEBHOOK_SECRET),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+    const signature=Buffer.from(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(event))).toString('hex');
+    const webhook=()=>new Request(origin+'/api/billing/webhook',{method:'POST',headers:{'x-razorpay-signature':signature},body:event});
+    assert.equal((await app.webhook.POST(webhook())).status,200);assert.equal((await app.webhook.POST(webhook())).status,200);
+    assert.equal(app.billing.hasPlus(await app.billing.membership('subscriber')),true);
+    for(let i=0;i<20;i++)await app.planner.reserveUsage('subscriber');
+    await assert.rejects(()=>app.planner.reserveUsage('subscriber'),e=>e.status===429);
+    for(let i=0;i<5;i++)await app.planner.reserveUsage('free-subscriber');
+    await assert.rejects(()=>app.planner.reserveUsage('free-subscriber'),e=>e.status===429);
+    user('other-subscriber');assert.equal((await app.cancelSubscription.POST(req('/api/billing/cancel',{}))).status,404);assert.equal(cancels,0);
+    user('subscriber');assert.equal((await app.cancelSubscription.POST(req('/api/billing/cancel',{}))).status,200);assert.equal(cancels,1);
+    sub={...sub,status:'cancelled'};await app.webhook.POST(webhook());assert.equal(app.billing.hasPlus(await app.billing.membership('subscriber')),false);
+    sub={...sub,status:'active',paid_count:0};await app.webhook.POST(webhook());assert.equal(app.billing.hasPlus(await app.billing.membership('subscriber')),false);
+    assert.throws(()=>app.billing.checkoutUrl('https://evil.example/pay'));
+  }finally{globalThis.fetch=original;for(const key of Object.keys(settings))delete context.env[key];}
+});

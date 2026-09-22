@@ -31,3 +31,17 @@ export const searchHistory = sqliteTable(
   },
   (t) => [index("idx_history_owner_created").on(t.owner, t.createdAt, t.id)],
 );
+export const tripShares = sqliteTable("trip_shares", {
+  id: text("id").primaryKey(),
+  owner: text("owner").notNull(),
+  tripId: text("trip_id").notNull(),
+  payload: text("payload").notNull(),
+}, t => [index("idx_shares_owner_trip").on(t.owner, t.tripId)]);
+export const subscriptions = sqliteTable("subscriptions", {
+  owner: text("owner").primaryKey(),
+  subscriptionId: text("subscription_id"),
+  status: text("status").notNull().default("creating"),
+  currentEnd: integer("current_end").notNull().default(0),
+  paidCount: integer("paid_count").notNull().default(0),
+  checkedAt: integer("checked_at").notNull().default(0),
+}, t => [index("idx_subscription_id").on(t.subscriptionId)]);

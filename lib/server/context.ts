@@ -29,7 +29,7 @@ export function sameOrigin(r: Request) {
       "This request could not be verified. Refresh and try again.",
     );
 }
-export async function body(r: Request) {
+export async function rawBody(r: Request) {
   const reader = r.body?.getReader();
   if (!reader) throw new ApiError(400, "Please check the form and try again.");
   const chunks: Uint8Array[] = [];
@@ -54,8 +54,12 @@ export async function body(r: Request) {
     joined.set(chunk, offset);
     offset += chunk.length;
   }
+  return joined;
+}
+export async function body(r: Request) {
+  const bytes = await rawBody(r);
   try {
-    return JSON.parse(new TextDecoder().decode(joined));
+    return JSON.parse(new TextDecoder().decode(bytes));
   } catch {
     throw new ApiError(400, "Please check the form and try again.");
   }

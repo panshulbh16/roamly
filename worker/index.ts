@@ -66,8 +66,10 @@ const worker = {
       "Permissions-Policy",
       "camera=(), microphone=(), geolocation=()",
     );
-    if (url.pathname.startsWith("/api/"))
+    const publicDestination = url.pathname === "/api/destinations" && request.method === "GET" && response.status === 200 && !response.headers.has("Set-Cookie");
+    if ((url.pathname.startsWith("/api/") && !publicDestination) || url.pathname.startsWith("/share/"))
       secured.headers.set("Cache-Control", "private, no-store");
+    if (url.pathname.startsWith("/share/")) secured.headers.set("Referrer-Policy", "no-referrer");
     return secured;
   },
 };

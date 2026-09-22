@@ -206,3 +206,17 @@ test('custom allowances reject missing categories, non-numbers and extreme value
   assert.equal(free.high, 0);
   assert.equal(free.low, 0);
 });
+
+test('return fares, shared car costs and chosen rooms reconcile without double counting',()=>{
+  const trip={...input,destination:'Goa, India',homeCity:'Bareilly',days:4,travelers:2};
+  const base=cost.estimateCost(trip,'Lower cost');
+  const train=cost.estimateCost(trip,'Lower cost',undefined,{rooms:1,mode:'Train',fare:1500});
+  const car=cost.estimateCost(trip,'Lower cost',undefined,{rooms:1,mode:'Car',fare:1500});
+  assert.equal(train.low-base.low,3300);
+  assert.equal(car.low-base.low,1650);
+  assert.deepEqual(train.rows.find(r=>r.key==='journey'),{key:'journey',low:3000,high:3000});
+  const separate=cost.estimateCost(trip,'Lower cost',undefined,{rooms:2,mode:'Not included',fare:0});
+  assert.equal(separate.rows[0].low,base.rows[0].low*2);
+  for(const patch of [{rooms:0},{rooms:3},{fare:-1},{fare:Infinity},{mode:'constructor'}])assert.throws(()=>cost.estimateCost(trip,'Lower cost',undefined,{rooms:1,mode:'Train',fare:100,...patch}));
+  assert.match(cost.costUrl(trip),/homeCity=Bareilly/);
+});

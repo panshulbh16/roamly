@@ -109,3 +109,28 @@ test('HTTP errors, corrupt chunks and truncated completions preserve the starter
     }
   } finally { globalThis.fetch = previousFetch; globalThis.window = previousWindow; }
 });
+
+test('day and activity controls reorder plans and regeneration preserves other days',async()=>{
+  const oldFetch=globalThis.fetch,oldWindow=globalThis.window;
+  globalThis.window={scrollTo(){}};
+  state.length=refs.length=0;render();
+  // Existing trip state follows form/busy/error/suggestions.
+  const itinerary=starterItinerary({...input,days:3});
+  itinerary.days.forEach((d,i)=>{d.title='Original '+i;d.activities.forEach((a,j)=>a.title=`Day ${i} activity ${j}`);});
+  const trip={id:'123e4567-e89b-42d3-a456-426614174000',intake:{...input,days:3},itinerary,source:'ai',createdAt:new Date().toISOString()};
+  state[4]=structuredClone(trip);
+  try{
+    const earlier=nodes(render()).find(n=>n.props?.['aria-label']==='Move Day 0 activity 1 earlier');
+    earlier.props.onClick();
+    assert.equal(state[4].itinerary.days[0].activities[0].title,'Day 0 activity 1');
+    assert.equal(state[4].itinerary.days[0].activities[0].time,trip.itinerary.days[0].activities[0].time);
+    const move=nodes(render()).filter(n=>n.type==='button'&&text(n)==='Move day later')[0];move.props.onClick();
+    assert.equal(state[4].itinerary.days[1].title,'Original 0');
+    const prior=structuredClone(state[4].itinerary.days);
+    globalThis.fetch=async()=>Response.json({day:{title:'Replacement',activities:prior[0].activities}});
+    const regenerate=nodes(render()).find(n=>n.type==='button'&&text(n)==='Regenerate this day · 1 AI plan');
+    regenerate.props.onClick();await tick();await tick();
+    assert.equal(state[4].itinerary.days[0].title,'Replacement');
+    assert.deepEqual(state[4].itinerary.days.slice(1),prior.slice(1));
+  }finally{globalThis.fetch=oldFetch;globalThis.window=oldWindow;}
+});

@@ -13,3 +13,11 @@ export * as policy from '../lib/auth/policy';
 export * as repository from '../lib/history/repository';
 export * as sample from '../lib/trips/sample';
 export * as planner from '../lib/server/planner';
+
+export * as shares from "../app/api/shares/route";
+export * as regenerate from "../app/api/regenerate/route";
+export * as billing from "../lib/billing/razorpay";
+export * as checkout from "../app/api/billing/checkout/route";
+export * as billingStatus from "../app/api/billing/status/route";
+export * as cancelSubscription from "../app/api/billing/cancel/route";
+export * as webhook from "../app/api/billing/webhook/route";

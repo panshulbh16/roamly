@@ -4,8 +4,9 @@ import Link from "next/link";
 import { ArrowRight, Check } from "lucide-react";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
+import { BillingControls } from "./billing";
 import { TripFooter } from "./footer";
-export function Pricing({ signedIn }: { signedIn: boolean }) {
+export function Pricing({ signedIn, billingEnabled = false }: { signedIn: boolean; billingEnabled?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [joined, setJoined] = useState(false);
   return <main className="workspace">
@@ -15,7 +16,7 @@ export function Pricing({ signedIn }: { signedIn: boolean }) {
             <div>
               <h1>More room to roam.</h1>
               <p className="subtext">
-                Roamly Plus is not available yet. You can join the waitlist below; the free planner is available now.
+                {billingEnabled ? "Choose the free planner or get more daily AI plans with Plus." : "Roamly Plus is not available yet. Join the waitlist for the ₹499/month plan; the free planner is available now."}
               </p>
             </div>
           </div>
@@ -47,19 +48,17 @@ export function Pricing({ signedIn }: { signedIn: boolean }) {
               className="panel"
               style={{ borderColor: "#91b09e", background: "#f1f6f2" }}
             >
-              <span className="eyebrow">ROAMLY PLUS · COMING SOON</span>
+              <span className="eyebrow">ROAMLY PLUS{!billingEnabled && " · COMING SOON"}</span>
               <h2 style={{ fontSize: 24, marginTop: 13 }}>
                 For your next big adventure
               </h2>
               <div className="price" style={{ fontSize: 28 }}>
-                Join the early list
+                ₹499 / month
               </div>
               <p className="subtext">
-                We’re shaping a paid plan for frequent travelers. Pricing and
-                included features will be announced before launch. No payment is
-                collected.
+                20 AI plans per day. Replace individual days, edit your itinerary, share snapshots and export a PDF. {billingEnabled ? "Payments and renewals are handled by Razorpay." : "Checkout is not open yet. No payment is collected."}
               </p>
-              {!signedIn ? <Link href="/auth?returnTo=%2Fpricing" className="primary" style={{ marginTop: 28, width: "100%" }}>Sign in to join the Plus waitlist<ArrowRight size={15} /></Link> : <button
+              {billingEnabled ? (signedIn ? <BillingControls /> : <Link href="/auth?returnTo=%2Fpricing" className="primary">Sign in for Plus</Link>) : !signedIn ? <Link href="/auth?returnTo=%2Fpricing" className="primary" style={{ marginTop: 28, width: "100%" }}>Sign in to join the Plus waitlist<ArrowRight size={15} /></Link> : <button
                 disabled={busy || joined}
                 className="primary"
                 style={{ marginTop: 28, width: "100%" }}
@@ -88,7 +87,7 @@ export function Pricing({ signedIn }: { signedIn: boolean }) {
                 <ArrowRight size={15} />
               </button>}
               <p className="form-note">
-                Uses your signed-in email. No charge, no commitment.
+                {billingEnabled ? "Daily limits reset at midnight UTC. Editing, sharing and PDF export are also available on Free." : "Uses your signed-in email. Joining the waitlist is free."}
               </p>
             </section>
           </div>

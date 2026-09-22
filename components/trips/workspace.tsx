@@ -1,5 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { ShareTrip } from "./share-trip";
+import { moveItem } from "@/lib/trips/edit";
 import { TripFooter } from "./footer";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -139,6 +141,9 @@ export function Workspace({
   const [saved, setSaved] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(view === "trips");
   const [extra, setExtra] = useState(false);
+  const [regenerating, setRegenerating] = useState<number | null>(null);
+  const dayRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => dayRequest.current?.abort(), [trip?.id]);
   const [edit, setEdit] = useState<{
     day: number;
     activity: number;
@@ -266,6 +271,27 @@ export function Workspace({
       }
     }
   }
+  async function regenerateDay(index: number) {
+    if (!trip || dayRequest.current) return;
+    const current = trip;
+    const controller = new AbortController();
+    dayRequest.current = controller;
+    setRegenerating(index);
+    try {
+      const response = await fetch("/api/regenerate", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trip: current, day: index }) });
+      const result = await response.json();
+      if (!response.ok) throw Error(result.error ?? "Could not replace this day.");
+      controller.signal.throwIfAborted();
+      setTrip(t => {
+        if (!t || t.id !== current.id) return t;
+        const next = structuredClone(t);
+        next.itinerary.days[index] = result.day;
+        return next;
+      });
+      toast.success("Day replaced. Save your trip to keep the change.");
+    } catch(e) { if (!controller.signal.aborted) toast.error((e as Error).message); }
+    finally { if (dayRequest.current === controller) { dayRequest.current = null; setRegenerating(null); } }
+  }
   async function save() {
     if (!trip) return;
     setBusy(true);
@@ -360,6 +386,7 @@ export function Workspace({
                 <Bookmark size={16} />
                 Save trip
               </button> : <Link className="primary" href="/auth?returnTo=%2F">Sign in to save trips</Link>}
+              {signedIn && <ShareTrip key={trip.id} trip={trip} />}
               <button
                 className="secondary-button"
                 onClick={() => window.print()}
@@ -386,6 +413,11 @@ export function Workspace({
                       {day.title}
                     </h2>
                   </div>
+                  <div className="trip-actions day-controls">
+                    <button className="text-button" disabled={i === 0 || regenerating !== null} onClick={() => setTrip(t => t && ({ ...t, itinerary: { ...t.itinerary, days: moveItem(t.itinerary.days, i, i - 1) } }))}>Move day earlier</button>
+                    <button className="text-button" disabled={i === trip.itinerary.days.length - 1 || regenerating !== null} onClick={() => setTrip(t => t && ({ ...t, itinerary: { ...t.itinerary, days: moveItem(t.itinerary.days, i, i + 1) } }))}>Move day later</button>
+                    {signedIn && <button className="text-button" disabled={regenerating !== null || busy} onClick={() => void regenerateDay(i)}>{regenerating === i ? "Replacing day…" : "Regenerate this day · 1 AI plan"}</button>}
+                  </div>
                   {day.activities.map((a, j) => (
                     <div className="activity" key={j}>
                       <div
@@ -396,6 +428,7 @@ export function Workspace({
                       >
                         <small>{a.time}</small>
                         <button
+                          disabled={regenerating !== null}
                           aria-label={`Edit ${a.title}`}
                           onClick={() =>
                             setEdit({
@@ -409,6 +442,10 @@ export function Workspace({
                         >
                           <Pencil size={14} />
                         </button>
+                      </div>
+                      <div className="trip-actions day-controls">
+                        <button className="text-button" aria-label={`Move ${a.title} earlier`} disabled={j === 0 || regenerating !== null} onClick={() => setTrip(t => { if (!t) return t; const next = structuredClone(t); next.itinerary.days[i].activities = moveItem(next.itinerary.days[i].activities, j, j - 1).map((a,k)=>({...a,time:t.itinerary.days[i].activities[k].time})); return next; })}>Earlier</button>
+                        <button className="text-button" aria-label={`Move ${a.title} later`} disabled={j === day.activities.length - 1 || regenerating !== null} onClick={() => setTrip(t => { if (!t) return t; const next = structuredClone(t); next.itinerary.days[i].activities = moveItem(next.itinerary.days[i].activities, j, j + 1).map((a,k)=>({...a,time:t.itinerary.days[i].activities[k].time})); return next; })}>Later</button>
                       </div>
                       <h3>{a.title}</h3>
                       <p>{a.description}</p>
@@ -640,7 +677,7 @@ export function Workspace({
                 </button>
                 <p className="form-note">
                   {aiReady
-                    ? "Personalized around you. Up to 5 plans per day."
+                    ? "Personalized around you. Free: 5 plans/day · Plus: 20."
                     : "Early access · Searches are saved to History. AI planning opens soon."}
                 </p>
               </form>

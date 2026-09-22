@@ -4,7 +4,7 @@ import { authConfig, authCookieOptions } from "@/lib/auth/config";
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request: { headers: request.headers } });
   const c = authConfig();
-  if (c.enabled && request.cookies.getAll().some(({ name }) => name.startsWith("sb-"))) {
+  if (!request.nextUrl?.pathname.startsWith("/share/") && c.enabled && request.cookies.getAll().some(({ name }) => name.startsWith("sb-"))) {
     const client = createServerClient(c.url, c.key, {
       cookieOptions: authCookieOptions,
       cookies: {
@@ -37,7 +37,17 @@ export const config = {
     "/history",
     "/explore",
     "/pricing",
+    "/share/:path*",
     "/auth/:path*",
-    "/api/:path*",
+    "/api/auth/:path*",
+    "/api/generate",
+    "/api/regenerate",
+    "/api/trips",
+    "/api/history",
+    "/api/waitlist",
+    "/api/shares",
+    "/api/billing/checkout",
+    "/api/billing/status",
+    "/api/billing/cancel",
   ],
 };

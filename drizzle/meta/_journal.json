@@ -15,6 +15,20 @@
       "when": 1788766229959,
       "tag": "0001_blue_stardust",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1790046934153,
+      "tag": "0002_silly_wrecking_crew",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1790047052751,
+      "tag": "0003_parallel_colonel_america",
+      "breakpoints": true
     }
   ]
 }
