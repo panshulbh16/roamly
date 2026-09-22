@@ -8,12 +8,12 @@ import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 const dir=mkdtempSync(join(process.cwd(),'.unit-screens-'));
 test.after(()=>rmSync(dir,{recursive:true,force:true}));
-const compiled=await build({stdin:{contents:`export {Workspace} from './components/trips/workspace';export {HistoryView} from './components/trips/history';export {SignIn} from './components/auth/sign-in';export {AppShell} from './components/trips/app-shell';`,resolveDir:process.cwd()},bundle:true,write:false,format:'esm',platform:'node',packages:'external',plugins:[{name:'router-fixture',setup(b){
+const compiled=await build({stdin:{contents:`export {Workspace} from './components/trips/workspace';export {Pricing} from './components/trips/pricing';export {HistoryView} from './components/trips/history';export {SignIn} from './components/auth/sign-in';export {AppShell} from './components/trips/app-shell';`,resolveDir:process.cwd()},bundle:true,write:false,format:'esm',platform:'node',packages:'external',plugins:[{name:'router-fixture',setup(b){
   b.onResolve({filter:/^next\/(navigation|link)$/},a=>({path:a.path,namespace:'router'}));
   b.onLoad({filter:/.*/,namespace:'router'},a=>({loader:'js',resolveDir:process.cwd(),contents:a.path.endsWith('navigation')?'const params=new URLSearchParams(); export const useSearchParams=()=>params;export const usePathname=()=>"/";':`import React from 'react';export default function Link({href,prefetch,...props}){return React.createElement('a',{...props,href});}`}));
 }}]});
 writeFileSync(join(dir,'screens.mjs'),compiled.outputFiles[0].text);
-const {Workspace,HistoryView,SignIn,AppShell}=await import(pathToFileURL(join(dir,'screens.mjs')));
+const {Workspace,Pricing,HistoryView,SignIn,AppShell}=await import(pathToFileURL(join(dir,'screens.mjs')));
 const render=(component,props={})=>renderToStaticMarkup(React.createElement(component,props));
 test('planner renders required destination/date controls and a single submission action',()=>{
   const html=render(Workspace,{aiReady:true});
@@ -24,7 +24,7 @@ test('planner renders required destination/date controls and a single submission
 test('all workspace views render their own initial state',()=>{
   assert.match(render(Workspace,{view:'trips'}),/Loading your trips/);
   assert.match(render(Workspace,{view:'explore'}),/Airbnb/);
-  assert.match(render(Workspace,{view:'pricing'}),/Plus/);
+  assert.match(render(Pricing,{signedIn:false}),/Plus/);
 });
 test('guest planner offers sign-in for future history without hiding the form',()=>{
   const html=render(Workspace,{aiReady:true,signedIn:false});
@@ -51,12 +51,12 @@ test('application shell renders guest and signed-in account navigation',()=>{
 
 
 test('Plus is clearly a waitlist and guests get a sign-in route back to pricing', () => {
-  const guest = render(Workspace, { view: 'pricing', signedIn: false });
+  const guest = render(Pricing, { signedIn: false });
   assert.match(guest, /Roamly Plus is not available yet/);
   assert.match(guest, /href="\/auth\?returnTo=%2Fpricing"/);
   assert.match(guest, /Sign in to join the Plus waitlist/);
   assert.doesNotMatch(guest, /Join the Plus waitlist<svg/);
-  const member = render(Workspace, { view: 'pricing', signedIn: true });
+  const member = render(Pricing, { signedIn: true });
   assert.match(member, /Join the Plus waitlist/);
   assert.doesNotMatch(member, /Sign in to join|Sign in<\/a> to keep future searches/);
   assert.match(member, /No payment is collected/);

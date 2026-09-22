@@ -4,7 +4,7 @@ import { authConfig, authCookieOptions } from "@/lib/auth/config";
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request: { headers: request.headers } });
   const c = authConfig();
-  if (c.enabled) {
+  if (c.enabled && request.cookies.getAll().some(({ name }) => name.startsWith("sb-"))) {
     const client = createServerClient(c.url, c.key, {
       cookieOptions: authCookieOptions,
       cookies: {
@@ -23,7 +23,9 @@ export async function proxy(request: NextRequest) {
         },
       },
     });
-    await client.auth.getUser();
+    // Refresh cookies only; routes verify identity with getUser() before authorizing.
+    // Never use the unverified session returned here for access decisions.
+    await client.auth.getSession();
   }
   response.headers.set("Cache-Control", "private, no-store");
   return response;

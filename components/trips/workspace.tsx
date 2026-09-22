@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { TripFooter } from "./footer";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -12,7 +13,6 @@ import {
   Mountain,
   Camera,
   Sun,
-  Check,
   SlidersHorizontal,
   Heart,
   LoaderCircle,
@@ -119,7 +119,7 @@ export function Workspace({
   aiReady = false,
   signedIn = true,
 }: {
-  view?: "plan" | "trips" | "explore" | "pricing";
+  view?: "plan" | "trips" | "explore";
   aiReady?: boolean;
   signedIn?: boolean;
 }) {
@@ -139,7 +139,6 @@ export function Workspace({
   const [saved, setSaved] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(view === "trips");
   const [extra, setExtra] = useState(false);
-  const [legal, setLegal] = useState<string | null>(null);
   const [edit, setEdit] = useState<{
     day: number;
     activity: number;
@@ -147,7 +146,6 @@ export function Workspace({
     description: string;
     place: string;
   } | null>(null);
-  const [joined, setJoined] = useState(false);
   function update<K extends keyof Intake>(key: K, value: Intake[K]) {
     setForm((f) => ({ ...f, [key]: value }));
   }
@@ -850,139 +848,8 @@ export function Workspace({
             </button>
           </section>
         </>
-      ) : (
-        <>
-          <div className="page-heading">
-            <div>
-              <h1>More room to roam.</h1>
-              <p className="subtext">
-                Roamly Plus is not available yet. You can join the waitlist below; the free planner is available now.
-              </p>
-            </div>
-          </div>
-          <div className="plan-grid">
-            <section className="panel">
-              <span className="eyebrow">EARLY ACCESS</span>
-              <h2 style={{ fontSize: 24, marginTop: 13 }}>
-                The everyday explorer
-              </h2>
-              <div className="price">Free</div>
-              <ul>
-                {[
-                  "Explore destination inspiration",
-                  "Edit and save sample itineraries",
-                  "Print your day-by-day plans",
-                  "Personalized AI when available",
-                ].map((t) => (
-                  <li key={t}>
-                    <Check />
-                    {t}
-                  </li>
-                ))}
-              </ul>
-              <Link href="/" className="primary" style={{ marginTop: 22 }}>
-                Start exploring
-              </Link>
-            </section>
-            <section
-              className="panel"
-              style={{ borderColor: "#91b09e", background: "#f1f6f2" }}
-            >
-              <span className="eyebrow">ROAMLY PLUS · COMING SOON</span>
-              <h2 style={{ fontSize: 24, marginTop: 13 }}>
-                For your next big adventure
-              </h2>
-              <div className="price" style={{ fontSize: 28 }}>
-                Join the early list
-              </div>
-              <p className="subtext">
-                We’re shaping a paid plan for frequent travelers. Pricing and
-                included features will be announced before launch. No payment is
-                collected.
-              </p>
-              {!signedIn ? <Link href="/auth?returnTo=%2Fpricing" className="primary" style={{ marginTop: 28, width: "100%" }}>Sign in to join the Plus waitlist<ArrowRight size={15} /></Link> : <button
-                disabled={busy || joined}
-                className="primary"
-                style={{ marginTop: 28, width: "100%" }}
-                onClick={async () => {
-                  setBusy(true);
-                  try {
-                    await api("/api/waitlist", { method: "POST" });
-                    setJoined(true);
-                    toast.success(
-                      "You’re on the Roamly Plus early-access list.",
-                    );
-                  } catch (e) {
-                    toast.error((e as Error).message);
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-              >
-                {joined
-                  ? "You’re on the list"
-                  : busy
-                    ? "Joining…"
-                    : "Join the Plus waitlist"}
-                <ArrowRight size={15} />
-              </button>}
-              <p className="form-note">
-                Uses your signed-in email. No charge, no commitment.
-              </p>
-            </section>
-          </div>
-        </>
-      )}
-      <footer className="footer">
-        <span>© {new Date().getFullYear()} Roamly. Go your own way.</span>
-        <div style={{ display: "flex", gap: 17 }}>
-          <button onClick={() => setLegal("Privacy")}>Privacy</button>
-          <button onClick={() => setLegal("Travel guidance")}>
-            Travel guidance
-          </button>
-          <button onClick={() => setLegal("Photography")}>Photography</button>
-        </div>
-      </footer>
-      <Dialog open={!!legal} onOpenChange={() => setLegal(null)}>
-        <DialogContent>
-          <DialogTitle>{legal}</DialogTitle>
-          <DialogDescription>
-            {legal === "Privacy" ? (
-              "Roamly stores submitted searches and saved itineraries against your signed-in account. Delete searches in History and saved trips in My trips. Google/email sign-in is handled by Supabase when connected. Your trip preferences are sent to the AI provider only when you request generation. Joining the Plus list stores your account email. Delete individual saved trips in My trips. Avoid entering sensitive medical or personal details. Public-launch privacy and support details are still being finalized."
-            ) : legal === "Photography" ? (
-              <>
-                Photography by{" "}
-                <a
-                  href="https://unsplash.com/photos/5CsJnGSR4s4"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Raul Taciu
-                </a>
-                ,{" "}
-                <a
-                  href="https://unsplash.com/photos/yVusp1IqwpY"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Bruce Tang
-                </a>
-                , and{" "}
-                <a
-                  href="https://unsplash.com/photos/jN9JnZ-SyVc"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Radoslav Bali
-                </a>{" "}
-                on Unsplash.
-              </>
-            ) : (
-              "Itineraries are suggestions, not reservations or guarantees. Prices, opening hours, weather, entry requirements, accessibility, and trail conditions need independent verification. Roamly does not currently sell bookings or charge for itineraries."
-            )}
-          </DialogDescription>
-        </DialogContent>
-      </Dialog>
+      ) : null}
+      <TripFooter />
       <Dialog open={!!edit} onOpenChange={() => setEdit(null)}>
         <DialogContent>
           <DialogTitle>Make this moment yours</DialogTitle>
