@@ -8,7 +8,6 @@ import {
 } from "@/lib/server/context";
 import { currentUser } from "@/lib/auth/server";
 import { intakeSchema, type Trip } from "@/lib/trips/schema";
-import { resolveDestination, suggestDestinations } from "@/lib/trips/destinations.server";
 import type { PlannerEvent } from "@/lib/trips/stream";
 import { AnthropicPlanner, reserveUsage } from "@/lib/server/planner";
 import {
@@ -29,6 +28,7 @@ export async function POST(r: Request) {
         400,
         parsed.error.issues[0]?.message ?? "Please check your trip details.",
       );
+    const { resolveDestination, suggestDestinations } = await import("@/lib/trips/destinations.server");
     const destination = resolveDestination(parsed.data.destination);
     if (!destination) {
       const suggestions = suggestDestinations(parsed.data.destination).map((match) => match.name);

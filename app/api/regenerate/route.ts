@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { body, identity, sameOrigin, failure, ApiError, privateHeaders } from "@/lib/server/context";
 import { tripSchema } from "@/lib/trips/schema";
-import { resolveDestination } from "@/lib/trips/destinations.server";
 import { AnthropicPlanner, reserveUsage } from "@/lib/server/planner";
 export async function POST(r:Request) {
   try {
@@ -10,6 +9,7 @@ export async function POST(r:Request) {
     const parsed = z.object({trip:tripSchema,day:z.number().int().min(0).max(9)}).safeParse(await body(r));
     if(!parsed.success || parsed.data.day >= parsed.data.trip.itinerary.days.length) throw new ApiError(400,"Choose a valid day.");
     const {trip,day} = parsed.data;
+    const { resolveDestination } = await import("@/lib/trips/destinations.server");
     if(!resolveDestination(trip.intake.destination)) throw new ApiError(422,"Choose a listed destination.");
     await reserveUsage(user.id);
     let startDate=trip.intake.startDate;

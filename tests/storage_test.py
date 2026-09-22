@@ -6,9 +6,13 @@ class StorageTests(unittest.TestCase):
  def test_request_reservations_stop_at_limit(self):
   code=pathlib.Path('lib/server/planner.ts').read_text()
   q=re.findall(r'prepare\(\s*"([^"]+)"\s*,?\s*\)' ,code)[0]
-  values=[self.db.execute(q,('user:a:today',)).fetchone() for _ in range(8)]
-  self.assertEqual(sum(v is not None for v in values),5)
-  self.assertEqual(self.db.execute(q,('user:b:today',)).fetchone(),(1,))
+  for limit in (5,20):
+   with self.subTest(limit=limit):
+    owner=f'user:limit{limit}:today'
+    values=[self.db.execute(q,(owner,limit)).fetchone() for _ in range(limit+3)]
+    self.assertEqual(sum(v is not None for v in values),limit)
+    self.assertEqual(self.db.execute(q,(owner,limit)).fetchone(),None)
+  self.assertEqual(self.db.execute(q,('user:b:today',5)).fetchone(),(1,))
  def test_save_is_owner_scoped_and_upsert_works_at_capacity(self):
   code=pathlib.Path('app/api/trips/route.ts').read_text()
   q=next(q for q in re.findall(r'prepare\(\s*"([^"]+)"\s*,?\s*\)' ,code) if q.startswith('INSERT'))
