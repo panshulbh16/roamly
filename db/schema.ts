@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { sqliteTable, text, integer, index, primaryKey } from "drizzle-orm/sqlite-core";
 export const trips = sqliteTable(
   "trips",
@@ -65,3 +66,13 @@ export const outingReports = sqliteTable("outing_reports", {
   reporter: text("reporter").notNull(), reason: text("reason").notNull(),
   createdAt: text("created_at").notNull(),
 }, t => [primaryKey({columns:[t.tripId,t.reporter]})]);
+
+// Event history deliberately survives a trip's deletion; trip links re-check access.
+export const notifications = sqliteTable("notifications", {
+  id: text("id").primaryKey().default(sql`(lower(hex(randomblob(16))))`),
+  recipient: text("recipient").notNull(),
+  tripId: text("trip_id").notNull(),
+  type: text("type").notNull(),
+  createdAt: text("created_at").notNull().default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+  readAt: text("read_at"),
+}, t => [index("idx_notifications_recipient_created").on(t.recipient,t.createdAt,t.id), index("idx_notifications_recipient_read").on(t.recipient,t.readAt)]);

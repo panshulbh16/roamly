@@ -23,3 +23,4 @@ export * as cancelSubscription from "../app/api/billing/cancel/route";
 export * as webhook from "../app/api/billing/webhook/route";
 
 export * as together from "../app/api/together/route";
+export * as notifications from "../app/api/notifications/route";

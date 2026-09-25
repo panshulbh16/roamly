@@ -10,7 +10,7 @@ Requests are pending → approved or declined; approved travellers may be remove
 
 Only the host sees request introductions. Meeting notes are returned only to the host or approved travellers, and are withheld from travellers on cancelled trips. Public output omits owner IDs and account emails. Removing a traveller stops future access but cannot recall details already seen. User content is rendered as text. All writes check origin and authentication, and API responses are private/no-store.
 
-Discover shows up to 50 upcoming trips, filtered by case-insensitive city/destination text and exact departure date. My activity returns the latest 100 hosted/requested trips. Hosting and joining each have a 100-record account ceiling; each trip has a 100-request ceiling. Saved drafts count toward the hosting ceiling. This bounded first version does not include automatic notifications, group chat, group bookings or payments between travellers; users refresh My activity for status changes.
+Discover shows up to 50 upcoming trips, filtered by case-insensitive city/destination text and exact departure date. My activity returns the latest 100 hosted/requested trips. Hosting and joining each have a 100-record account ceiling; each trip has a 100-request ceiling. Saved drafts count toward the hosting ceiling. This bounded first version does not include email notifications, group chat, group bookings or payments between travellers; users refresh My activity for status changes.
 
 ## Reports and operation
 
@@ -21,3 +21,11 @@ Site operators can review `outing_reports` using the trusted D1 administration i
 ## Checks
 
 `node --test tests/auth-history.test.mjs tests/navigation.test.mjs` covers free/guest rejection, private drafts, discarded-draft privacy, public field filtering, request ownership, duplicate joins, competing last-place approvals, revoked access, lifecycle and subscription expiry. Full regression: `npm test`, plus `npx tsc --noEmit` and `python3 tests/storage_test.py`.
+
+## In-app notifications
+
+Signed-in users open the bell in the header for a private inbox. New requests and withdrawals notify the host; approvals, declines and removals notify the affected traveller. Cancellation notifies pending and approved travellers. Changed meeting notes notify approved travellers. Alert text never copies private introductions or meeting/contact details.
+
+SQL triggers in migration 0005 insert notifications in the same transaction as the state change. No-op updates do not emit, and notification failure rolls back the mutation. Existing activity is not backfilled. Notifications survive trip removal; a link always uses the current trip authorization checks.
+
+GET /api/notifications returns 20 newest items with a stable timestamp/ID cursor and unread count. POST marks one recipient-owned record read, idempotently. The inbox fetches on open, refreshes every 30 seconds while visible and supports older pages. Refresh returns to the latest page. The badge shows the last fetched count; it is not a push subscription. Read status is durable. Retention is indefinite in this release. No emails or browser push notifications are sent.

@@ -61,3 +61,9 @@ test('Plus is clearly a waitlist and guests get a sign-in route back to pricing'
   assert.doesNotMatch(member, /Sign in to join|Sign in<\/a> to keep future searches/);
   assert.match(member, /No payment is collected/);
 });
+
+test('signed-in shell offers Notifications while guests have no private inbox',()=>{
+ const signed=render(AppShell,{user:{id:'x',email:'x@test.example',displayName:'Ada'}});
+ assert.match(signed,/aria-label="Notifications"/);
+ assert.doesNotMatch(render(AppShell,{user:null}),/aria-label="Notifications"/);
+});

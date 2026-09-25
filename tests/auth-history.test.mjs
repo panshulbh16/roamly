@@ -469,3 +469,25 @@ test('discarding a private Together draft never exposes it',async()=>{
     context.headers=new Headers();assert.equal((await app.together.GET(req('/api/together?id='+id,undefined,'GET'))).status,404);
   } finally {sql.prepare('DELETE FROM outings WHERE id=?').run(id);}
 });
+
+test('notification API isolates accounts, pages tied timestamps and marks read idempotently',async()=>{
+ assert.ok(app.notifications,'notification route must be exported');
+ const get=(q='')=>app.notifications.GET(req('/api/notifications'+q,undefined,'GET'));
+ const mark=id=>app.notifications.POST(req('/api/notifications',{id}));
+ const stamp='2026-09-25T00:00:00.000Z';
+ for(let i=1;i<=25;i++)sql.prepare('INSERT INTO notifications(id,recipient,trip_id,type,created_at) VALUES (?,?,?,?,?)').run(i.toString(16).padStart(32,'0'),'notify-alice','trip','request_approved',stamp);
+ const foreign='f'.repeat(32);sql.prepare("INSERT INTO notifications(id,recipient,trip_id,type) VALUES (?,'notify-bob','trip','trip_cancelled')").run(foreign);
+ try{
+  context.headers=new Headers();assert.equal((await get()).status,401);assert.equal((await mark(foreign)).status,401);
+  user('notify-alice');let response=await get();assert.equal(response.headers.get('Cache-Control'),'private, no-store');let first=await response.json();assert.equal(first.items.length,20);assert.equal(first.unreadCount,25);assert.ok(first.nextCursor);
+  assert.ok(first.items.every(n=>!('recipient' in n)&&!('meeting' in n)));
+  const second=await(await get('?cursor='+encodeURIComponent(first.nextCursor))).json();assert.equal(second.items.length,5);assert.equal(second.nextCursor,null);assert.equal(new Set([...first.items,...second.items].map(n=>n.id)).size,25);
+  assert.equal((await get('?cursor=broken')).status,400);assert.equal((await get('?cursor='+encodeURIComponent(JSON.stringify({createdAt:stamp,id:'bad'})))).status,400);
+  assert.equal((await mark(foreign)).status,404);assert.equal((await mark('bad')).status,400);
+  const request=req('/api/notifications',{id:first.items[0].id});request.headers.set('origin','https://foreign.test');assert.equal((await app.notifications.POST(request)).status,403);
+  assert.equal((await mark(first.items[0].id)).status,200);const readAt=sql.prepare('SELECT read_at FROM notifications WHERE id=?').get(first.items[0].id).read_at;
+  assert.equal((await mark(first.items[0].id)).status,200);assert.equal(sql.prepare('SELECT read_at FROM notifications WHERE id=?').get(first.items[0].id).read_at,readAt);
+  assert.equal((await(await get()).json()).unreadCount,24);
+  user('notify-bob');assert.equal((await(await get()).json()).items.length,1);
+ }finally{sql.exec("DELETE FROM notifications WHERE recipient IN ('notify-alice','notify-bob')");context.headers=new Headers();}
+});

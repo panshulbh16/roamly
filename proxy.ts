@@ -39,6 +39,7 @@ export const config = {
     "/pricing",
     "/together",
     "/api/together",
+    "/api/notifications",
     "/share/:path*",
     "/auth/:path*",
     "/api/auth/:path*",

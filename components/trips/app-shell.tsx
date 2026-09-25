@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { Notifications } from "./notifications";
 import type { AppUser } from "@/lib/auth/server";
 import { usePathname } from "next/navigation";
 import {
@@ -114,6 +115,7 @@ export function AppShell({
             </Link>
           </div>
           <div className="top-actions">
+            {user && <Notifications />}
             <Dialog>
               <DialogTrigger asChild>
                 <button aria-label="How Roamly works">
