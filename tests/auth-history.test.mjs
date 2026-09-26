@@ -508,6 +508,55 @@ test('Together: publish straight from the editor with only the basics',async()=>
   } finally {sql.prepare('DELETE FROM outings WHERE id=?').run(id);sql.prepare("DELETE FROM subscriptions WHERE owner='quick-host'").run();context.headers=new Headers();}
 });
 
+test('Together email invites: host-only, hold places, sign the guest in once and add them to the trip',async()=>{
+  const id=crypto.randomUUID(), date=new Date(Date.now()+86400000).toISOString().slice(0,10), original=globalThis.fetch;
+  const trip={id,title:'Lake weekend <b>',hostName:'Ana',city:'Delhi',destination:'Nainital',startDate:date,capacity:2,summary:'',cost:0,days:[],meeting:'Meet at gate 2'};
+  const post=(action,extra={})=>app.together.POST(req('/api/together',{action,id,...extra}));
+  const accept=token=>app.inviteAccept.POST(req('/api/together/invite',{token}));
+  const settings={RESEND_API_KEY:'re_test',EMAIL_FROM:'Roamly <roamly@example.test>',SUPABASE_SERVICE_ROLE_KEY:'service',SUPABASE_URL:'https://sb.test/',SUPABASE_PUBLISHABLE_KEY:'sb_publishable_test',SUPABASE_AUTH_ENABLED:'true'};
+  const mails=[], guests={};
+  globalThis.fetch=async(url,options={})=>{
+    const u=new URL(url), body=options.body?JSON.parse(options.body):{};
+    if(u.host==='api.resend.com'){mails.push(body);return Response.json({id:'email_'+mails.length});}
+    if(u.pathname==='/auth/v1/admin/generate_link'){guests[body.email]??=crypto.randomUUID();return Response.json({id:guests[body.email],email:body.email,aud:'authenticated',action_link:'x',email_otp:'123456',hashed_token:'hash:'+body.email,redirect_to:'',verification_type:'magiclink'});}
+    if(u.pathname==='/auth/v1/verify'){const email=body.token_hash.slice(5);return Response.json({access_token:'at',token_type:'bearer',expires_in:3600,expires_at:Math.floor(Date.now()/1000)+3600,refresh_token:'rt',user:{id:guests[email],email,aud:'authenticated',app_metadata:{},user_metadata:{},created_at:new Date().toISOString()}});}
+    throw Error('Unexpected request '+url);
+  };
+  const tokenFor=email=>mails.findLast(m=>m.to===email).text.match(/\?t=([A-Za-z0-9_-]+)/)[1];
+  sql.prepare("INSERT INTO subscriptions (owner,status,current_end,paid_count) VALUES ('invite-host','active',?,1)").run(Math.floor(Date.now()/1000)+86400);
+  try{
+    jar.clear();user('invite-host');assert.equal((await post('save',{trip,publish:true})).status,200);
+    assert.equal((await post('invite',{emails:['a@x.test']})).status,503,'needs email + Supabase admin configured');
+    Object.assign(context.env,settings);
+    user('invite-stranger');assert.equal((await post('invite',{emails:['a@x.test']})).status,403);
+    user('invite-host');
+    assert.equal((await post('invite',{emails:['not-an-email']})).status,400);
+    assert.equal((await post('invite',{emails:['a@x.test','b@x.test','c@x.test']})).status,409,'three invites cannot fit two places');
+    const sent=await post('invite',{emails:['A@x.test','b@x.test']});assert.equal(sent.status,200);assert.equal((await sent.json()).sent,2);
+    assert.deepEqual(mails.map(m=>m.to),['a@x.test','b@x.test']);assert.equal(mails[0].from,settings.EMAIL_FROM);
+    assert.ok(mails[0].html.includes('Lake weekend &lt;b&gt;'),'trip text is escaped in the email');
+    assert.equal((await post('invite',{emails:['c@x.test']})).status,409,'unaccepted invites hold their places');
+    assert.equal(sql.prepare('SELECT count(*) n FROM outing_invites WHERE trip_id=? AND token_hash LIKE ?').get(id,'%'+tokenFor('a@x.test')+'%').n,0,'only a hash of the token is stored');
+    let detail=await (await app.together.GET(req('/api/together?id='+id,undefined,'GET'))).json();assert.deepEqual(detail.invites.map(i=>i.status),['sent','sent']);
+    context.headers=new Headers();jar.clear();
+    assert.equal((await accept('x'.repeat(43))).status,409,'unknown token');
+    const joined=await accept(tokenFor('a@x.test'));assert.equal(joined.status,200);assert.equal((await joined.json()).redirectTo,'/together?trip='+id);
+    const member='supabase:'+guests['a@x.test'];
+    assert.equal(sql.prepare('SELECT status FROM outing_requests WHERE trip_id=? AND member=?').get(id,member).status,'approved');
+    assert.ok([...jar.keys()].some(k=>k.startsWith('sb-')),'the guest is signed in');assert.equal(jar.get('roamly-auth-provider').value,'supabase');
+    assert.equal(sql.prepare("SELECT count(*) n FROM notifications WHERE recipient='invite-host' AND trip_id=? AND type='invite_accepted'").get(id).n,1);
+    assert.equal((await accept(tokenFor('a@x.test'))).status,409,'each link works once');
+    sql.prepare("UPDATE outing_invites SET expires_at=1 WHERE trip_id=? AND email='b@x.test'").run(id);
+    assert.equal((await accept(tokenFor('b@x.test'))).status,409,'expired links are refused');
+    jar.clear();user('invite-host');mails.length=0;assert.equal((await (await post('invite',{emails:['a@x.test','b@x.test']})).json()).sent,1,'joined guests are not re-invited; expired ones get a fresh link');
+    context.headers=new Headers();jar.clear();assert.equal((await accept(tokenFor('b@x.test'))).status,200,'resent link works');
+  } finally {
+    globalThis.fetch=original;for(const k of Object.keys(settings))delete context.env[k];jar.clear();context.headers=new Headers();
+    for(const t of ['notifications','outing_invites','outing_requests'])sql.prepare(`DELETE FROM ${t} WHERE trip_id=?`).run(id);
+    sql.prepare('DELETE FROM outings WHERE id=?').run(id);sql.prepare("DELETE FROM subscriptions WHERE owner='invite-host'").run();
+  }
+});
+
 test('discarding a private Together draft never exposes it',async()=>{
   const id=crypto.randomUUID();user('draft-host');
   sql.prepare("INSERT INTO outings (id,owner,city,destination,start_date,capacity,payload,meeting,created_at) VALUES (?,?,'Bareilly','Nainital','2099-01-01',1,'{}','secret','today')").run(id,'draft-host');

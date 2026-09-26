@@ -23,4 +23,5 @@ export * as confirm from "../app/api/billing/confirm/route";
 export * as webhook from "../app/api/billing/webhook/route";
 
 export * as together from "../app/api/together/route";
+export * as inviteAccept from "../app/api/together/invite/route";
 export * as notifications from "../app/api/notifications/route";
