@@ -5,8 +5,8 @@ import {build} from 'esbuild';
 import {readFileSync,readdirSync} from 'node:fs';
 const sql=new DatabaseSync(':memory:');
 for(const file of readdirSync('drizzle').filter(f=>f.endsWith('.sql')).sort())sql.exec(readFileSync('drizzle/'+file,'utf8'));
-class Statement{constructor(q,values=[]){this.q=q;this.values=values}bind(...values){return new Statement(this.q,values)}async first(){return sql.prepare(this.q).get(...this.values)??null}async all(){return {results:sql.prepare(this.q).all(...this.values),success:true,meta:{}}}async run(){sql.prepare(this.q).run(...this.values);return {success:true,results:[],meta:{}}}}
-const jar=new Map();const context={env:{DB:{prepare:q=>new Statement(q)}},headers:new Headers(),jar,redirect:p=>{throw Error('REDIRECT:'+p)}};
+class Statement{constructor(q,values=[]){this.q=q;this.values=values}bind(...values){return new Statement(this.q,values)}async first(){return sql.prepare(this.q).get(...this.values)??null}async all(){return {results:sql.prepare(this.q).all(...this.values),success:true,meta:{}}}async run(){const r=sql.prepare(this.q).run(...this.values);return {success:true,results:[],meta:{changes:Number(r.changes)}}}}
+const jar=new Map();const context={env:{DB:{prepare:q=>new Statement(q),batch:async list=>{sql.exec('BEGIN');try{const out=[];for(const st of list)out.push(await st.run());sql.exec('COMMIT');return out;}catch(e){sql.exec('ROLLBACK');throw e;}}}},headers:new Headers(),jar,redirect:p=>{throw Error('REDIRECT:'+p)}};
 globalThis.__roamlyTest=context;
 const compiled=await build({entryPoints:['tests/auth-history-entry.ts'],bundle:true,write:false,format:'esm',platform:'node',plugins:[{name:'test-runtime',setup(b){b.onResolve({filter:/^(cloudflare:workers|next\/headers|next\/navigation)$/},args=>({path:args.path,namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},args=>({loader:'js',contents:args.path==='cloudflare:workers'?'export const env=globalThis.__roamlyTest.env':args.path==='next/navigation'?'export const redirect=globalThis.__roamlyTest.redirect':`export async function headers(){return globalThis.__roamlyTest.headers} export async function cookies(){const jar=globalThis.__roamlyTest.jar;return {get:n=>jar.has(n)?{name:n,value:jar.get(n).value}:undefined,getAll:()=>Array.from(jar,([name,c])=>({name,value:c.value})),set:(name,value,options)=>jar.set(name,{value,options}),delete:name=>jar.delete(name)}}`}));}}]});
 const app=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text).toString('base64'));
@@ -375,44 +375,59 @@ test('single-day regeneration keeps original needs and date, rejects invalid day
   }finally{globalThis.fetch=original;for(const key of ['ANTHROPIC_API_KEY','ANTHROPIC_MODEL','AI_MONTHLY_REQUEST_LIMIT'])delete context.env[key];}
 });
 
-test('Razorpay checkout verifies price, reuses subscriptions, verifies signed webhooks and enforces paid limits',async()=>{
+test('Razorpay Plus pass: currency by country, verified callback and webhook, idempotent grant, paid limits',async()=>{
   jar.clear();user('subscriber');const original=globalThis.fetch;
-  const settings={RAZORPAY_ENABLED:'true',RAZORPAY_KEY_ID:'fixture',RAZORPAY_KEY_SECRET:'fixture',RAZORPAY_PLAN_ID:'plan_fixture',RAZORPAY_WEBHOOK_SECRET:'webhook-fixture',ANTHROPIC_API_KEY:'fixture',ANTHROPIC_MODEL:'fixture',AI_MONTHLY_REQUEST_LIMIT:'10000'};
+  const settings={RAZORPAY_ENABLED:'true',RAZORPAY_KEY_ID:'fixture',RAZORPAY_KEY_SECRET:'fixture-secret',RAZORPAY_WEBHOOK_SECRET:'webhook-fixture',RAZORPAY_INTERNATIONAL:'true',ANTHROPIC_API_KEY:'fixture',ANTHROPIC_MODEL:'fixture',AI_MONTHLY_REQUEST_LIMIT:'10000'};
   Object.assign(context.env,settings);
-  let amount=49900,creates=0,cancels=0;
-  let sub={id:'sub_fixture',plan_id:'plan_fixture',status:'created',paid_count:0,current_end:null,quantity:1,short_url:'https://rzp.io/test'};
+  const created=[];let n=0;
   globalThis.fetch=async(url,options)=>{
-    const path=new URL(url).pathname;
-    if(path==='/v1/plans/plan_fixture')return Response.json({id:'plan_fixture',period:'monthly',interval:1,item:{amount,currency:'INR'}});
-    if(path==='/v1/subscriptions'){creates++;return Response.json(sub);}
-    if(path==='/v1/subscriptions/sub_fixture/cancel'){cancels++;assert.equal(JSON.parse(options.body).cancel_at_cycle_end,true);return Response.json(sub);}
-    if(path==='/v1/subscriptions/sub_fixture')return Response.json(sub);
-    throw Error('Unexpected billing path');
+    if(new URL(url).pathname!=='/v1/orders')throw Error('Unexpected billing path');
+    const body=JSON.parse(options.body);created.push(body);return Response.json({id:'order_fixture'+(++n),amount:body.amount,currency:body.currency});
   };
+  const sign=async(secret,text)=>{const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);return Buffer.from(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(text))).toString('hex');};
+  const withCountry=(country)=>{const r=req('/api/billing/checkout',{});r.headers.set('cf-ipcountry',country);return r;};
+  const now=()=>Math.floor(Date.now()/1000);
   try{
-    amount=50000;assert.equal((await app.checkout.POST(req('/api/billing/checkout',{}))).status,503);assert.equal(creates,0);
-    amount=49900;
-    assert.equal((await app.checkout.POST(req('/api/billing/checkout',{}))).status,200);
-    assert.equal((await app.checkout.POST(req('/api/billing/checkout',{}))).status,200);assert.equal(creates,1);
+    assert.equal(app.billing.billingCurrency('US'),'USD');assert.equal(app.billing.billingCurrency('IN'),'INR');assert.equal(app.billing.billingCurrency(null),'INR');assert.equal(app.billing.billingCurrency('XX'),'INR');
+    const inr=await (await app.checkout.POST(withCountry('IN'))).json();
+    assert.deepEqual([inr.amount,inr.currency,inr.keyId],[49900,'INR','fixture']);assert.equal(created[0].notes.roamly_owner,'subscriber');
+    const usd=await (await app.checkout.POST(withCountry('US'))).json();
+    assert.deepEqual([usd.amount,usd.currency],[1000,'USD']);
+    context.env.RAZORPAY_INTERNATIONAL='false';
+    assert.equal((await (await app.checkout.POST(withCountry('US'))).json()).currency,'INR');
+    context.env.RAZORPAY_INTERNATIONAL='true';
     assert.equal(app.billing.hasPlus(await app.billing.membership('subscriber')),false);
-    const event=JSON.stringify({payload:{subscription:{entity:{id:'sub_fixture',status:'active'}}}});
+    // Forged callback is rejected and grants nothing.
+    assert.equal((await app.confirm.POST(req('/api/billing/confirm',{orderId:inr.orderId,paymentId:'pay_1',signature:'0'.repeat(64)}))).status,400);
+    assert.equal(app.billing.hasPlus(await app.billing.membership('subscriber')),false);
+    // Another signed-in user confirming grants to the order's owner, not the caller.
+    user('someone-else');
+    const good={orderId:inr.orderId,paymentId:'pay_1',signature:await sign(settings.RAZORPAY_KEY_SECRET,inr.orderId+'|pay_1')};
+    assert.equal((await app.confirm.POST(req('/api/billing/confirm',good))).status,200);
+    assert.equal(app.billing.hasPlus(await app.billing.membership('someone-else')),false);
+    user('subscriber');
+    const first=await app.billing.membership('subscriber');
+    assert.equal(app.billing.hasPlus(first),true);assert.ok(Math.abs(first.current_end-(now()+30*86400))<5);
+    // Replayed callback and webhook for the same order do not extend the pass.
+    const event=JSON.stringify({event:'order.paid',payload:{order:{entity:{id:inr.orderId}},payment:{entity:{id:'pay_1'}}}});
     const bad=new Request(origin+'/api/billing/webhook',{method:'POST',headers:{'x-razorpay-signature':'0'.repeat(64)},body:event});
     assert.equal((await app.webhook.POST(bad)).status,401);
-    sub={...sub,status:'active',paid_count:1,current_end:Math.floor(Date.now()/1000)+3600};
-    const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(settings.RAZORPAY_WEBHOOK_SECRET),{name:'HMAC',hash:'SHA-256'},false,['sign']);
-    const signature=Buffer.from(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(event))).toString('hex');
-    const webhook=()=>new Request(origin+'/api/billing/webhook',{method:'POST',headers:{'x-razorpay-signature':signature},body:event});
-    assert.equal((await app.webhook.POST(webhook())).status,200);assert.equal((await app.webhook.POST(webhook())).status,200);
-    assert.equal(app.billing.hasPlus(await app.billing.membership('subscriber')),true);
+    const hook=async body=>new Request(origin+'/api/billing/webhook',{method:'POST',headers:{'x-razorpay-signature':await sign(settings.RAZORPAY_WEBHOOK_SECRET,body)},body});
+    assert.equal((await app.webhook.POST(await hook(event))).status,200);
+    assert.equal((await app.confirm.POST(req('/api/billing/confirm',good))).status,200);
+    assert.equal((await app.billing.membership('subscriber')).current_end,first.current_end);
+    // A second pass (via webhook only, tab closed) stacks on top of the first.
+    assert.equal((await app.webhook.POST(await hook(JSON.stringify({event:'order.paid',payload:{order:{entity:{id:usd.orderId}},payment:{entity:{id:'pay_2'}}}})))).status,200);
+    const second=await app.billing.membership('subscriber');
+    assert.equal(second.current_end,first.current_end+30*86400);assert.equal(second.paid_count,2);
+    const status=await (await app.billingStatus.GET()).json();assert.equal(status.plus,true);assert.equal(status.until,second.current_end);
     for(let i=0;i<20;i++)await app.planner.reserveUsage('subscriber');
     await assert.rejects(()=>app.planner.reserveUsage('subscriber'),e=>e.status===429);
     for(let i=0;i<5;i++)await app.planner.reserveUsage('free-subscriber');
     await assert.rejects(()=>app.planner.reserveUsage('free-subscriber'),e=>e.status===429);
-    user('other-subscriber');assert.equal((await app.cancelSubscription.POST(req('/api/billing/cancel',{}))).status,404);assert.equal(cancels,0);
-    user('subscriber');assert.equal((await app.cancelSubscription.POST(req('/api/billing/cancel',{}))).status,200);assert.equal(cancels,1);
-    sub={...sub,status:'cancelled'};await app.webhook.POST(webhook());assert.equal(app.billing.hasPlus(await app.billing.membership('subscriber')),false);
-    sub={...sub,status:'active',paid_count:0};await app.webhook.POST(webhook());assert.equal(app.billing.hasPlus(await app.billing.membership('subscriber')),false);
-    assert.throws(()=>app.billing.checkoutUrl('https://evil.example/pay'));
+    sql.prepare("UPDATE subscriptions SET current_end=? WHERE owner='subscriber'").run(now()-1);
+    assert.equal(app.billing.hasPlus(await app.billing.membership('subscriber')),false);
+    delete context.env.RAZORPAY_ENABLED;assert.equal((await app.checkout.POST(withCountry('IN'))).status,503);
   }finally{globalThis.fetch=original;for(const key of Object.keys(settings))delete context.env[key];}
 });
 

@@ -16,7 +16,7 @@ export function Pricing({ signedIn, billingEnabled = false, price = "₹499" }: 
             <div>
               <h1>More room to roam.</h1>
               <p className="subtext">
-                {billingEnabled ? "Choose the free planner or get more daily AI plans with Plus." : `Roamly Plus is not available yet. Join the waitlist for the ${price}/month plan; the free planner is available now.`}
+                {billingEnabled ? "Choose the free planner or get more daily AI plans with Plus." : `Roamly Plus is not available yet. Join the waitlist for the ${price} 30-day pass; the free planner is available now.`}
               </p>
             </div>
           </div>
@@ -54,10 +54,10 @@ export function Pricing({ signedIn, billingEnabled = false, price = "₹499" }: 
                 For your next big adventure
               </h2>
               <div className="price" style={{ fontSize: 28 }}>
-                {price} / month
+                {price} / 30 days
               </div>
               <p className="subtext">
-                20 AI plans per day. Host city-based trips with Travel Together, publish your own itinerary and approve travellers. Replace individual days, edit your itinerary, share snapshots and export a PDF. {billingEnabled ? "Payments and renewals are handled by Razorpay." : "Checkout is not open yet. No payment is collected."}
+                20 AI plans per day. Host city-based trips with Travel Together, publish your own itinerary and approve travellers. Replace individual days, edit your itinerary, share snapshots and export a PDF. {billingEnabled ? "A 30-day pass paid once through Razorpay. Cards, UPI and, outside India, PayPal. No auto-renewal." : "Checkout is not open yet. No payment is collected."}
               </p>
               {billingEnabled ? (signedIn ? <BillingControls price={price} /> : <Link href="/auth?returnTo=%2Fpricing" className="primary">Sign in for Plus</Link>) : !signedIn ? <Link href="/auth?returnTo=%2Fpricing" className="primary" style={{ marginTop: 28, width: "100%" }}>Sign in to join the Plus waitlist<ArrowRight size={15} /></Link> : <button
                 disabled={busy || joined}

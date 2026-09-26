@@ -19,7 +19,7 @@ export * as regenerate from "../app/api/regenerate/route";
 export * as billing from "../lib/billing/razorpay";
 export * as checkout from "../app/api/billing/checkout/route";
 export * as billingStatus from "../app/api/billing/status/route";
-export * as cancelSubscription from "../app/api/billing/cancel/route";
+export * as confirm from "../app/api/billing/confirm/route";
 export * as webhook from "../app/api/billing/webhook/route";
 
 export * as together from "../app/api/together/route";

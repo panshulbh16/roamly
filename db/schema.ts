@@ -47,6 +47,16 @@ export const subscriptions = sqliteTable("subscriptions", {
   checkedAt: integer("checked_at").notNull().default(0),
 }, t => [index("idx_subscription_id").on(t.subscriptionId)]);
 
+// One-time Plus passes (Razorpay Orders); paying flips status created -> paid exactly once.
+export const orders = sqliteTable("orders", {
+  id: text("id").primaryKey(),
+  owner: text("owner").notNull(),
+  amount: integer("amount").notNull(),
+  currency: text("currency").notNull(),
+  status: text("status").notNull().default("created"),
+  paymentId: text("payment_id"),
+}, t => [index("idx_orders_owner").on(t.owner)]);
+
 export const outings = sqliteTable("outings", {
   id: text("id").primaryKey(), owner: text("owner").notNull(),
   city: text("city").notNull(), destination: text("destination").notNull(),
