@@ -41,14 +41,17 @@ export async function POST(r:Request) {
     if(action==='save') {
       if(!hasPlus(await membership(user.id))) throw new ApiError(403,'Roamly Plus is required to create or edit a draft.');
       const valid=outingSchema.safeParse(input.trip);
-      if(!valid.success || valid.data.id!==id) throw new ApiError(400,'Complete all fields, with 1–10 days and 1–20 places.');
+      if(!valid.success || valid.data.id!==id) throw new ApiError(400,'Add a title, host name, both cities and a date, with up to 10 days and 1–20 places.');
       const {meeting,...trip}=valid.data;
       if(!upcoming(trip.startDate)) throw new ApiError(400,'Choose today or a future departure date.');
       const saved=await db().prepare(`INSERT INTO outings (id,owner,city,destination,start_date,capacity,payload,meeting,created_at)
         SELECT ?,?,?,?,?,?,?,?,? WHERE (SELECT count(*) FROM outings WHERE owner=?)<100 OR EXISTS (SELECT 1 FROM outings WHERE id=? AND owner=?)
         ON CONFLICT(id) DO UPDATE SET city=excluded.city,destination=excluded.destination,start_date=excluded.start_date,capacity=excluded.capacity,payload=excluded.payload,meeting=excluded.meeting
-        WHERE outings.owner=excluded.owner AND outings.status='draft' RETURNING id`).bind(id,user.id,trip.city,trip.destination,trip.startDate,trip.capacity,JSON.stringify(trip),meeting,new Date().toISOString(),user.id,id,user.id).first();
-      if(!saved) throw new ApiError(409,'Only your drafts can be edited. You can store up to 100 trips.');
+        WHERE outings.owner=excluded.owner AND outings.status IN ('draft','open','closed')
+          AND excluded.capacity>=(SELECT count(*) FROM outing_requests WHERE trip_id=outings.id AND status='approved') RETURNING id`).bind(id,user.id,trip.city,trip.destination,trip.startDate,trip.capacity,JSON.stringify(trip),meeting,new Date().toISOString(),user.id,id,user.id).first();
+      if(!saved) throw new ApiError(409,'This trip can’t be edited: it was cancelled, or guest places are below approved travellers. You can store up to 100 trips.');
+      // Publishing straight from the editor skips the separate draft step.
+      if(input.publish===true) await db().prepare("UPDATE outings SET status='open' WHERE id=? AND status='draft'").bind(id).run();
     } else {
       const row=await db().prepare('SELECT * FROM outings WHERE id=?').bind(id).first<Row>();
       if(!row || (['draft','discarded'].includes(row.status) && row.owner!==user.id)) throw new ApiError(404,'This trip is unavailable.');
