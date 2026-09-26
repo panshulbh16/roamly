@@ -15,7 +15,7 @@ No subscription plan is needed.
 
 ## Webhook
 
-In Razorpay → Webhooks, add `https://roamly.panshulbh16.workers.dev/api/billing/webhook` for the `order.paid` event with the webhook secret above. Razorpay allows one webhook per URL, and a webhook's secret can't be edited; to change the secret, delete the webhook and create it again with the same value saved as `RAZORPAY_WEBHOOK_SECRET`. Checkout's success callback grants the pass immediately after verifying the payment signature; the webhook is the backstop for buyers who close the tab. Both are idempotent: only the first call that flips an order from `created` to `paid` grants 30 days.
+In Razorpay → Webhooks, add `https://heyroamly.com/api/billing/webhook` (the older `roamly.panshulbh16.workers.dev` webhook URL keeps working because `/api/` is not redirected) for the `order.paid` event with the webhook secret above. Razorpay allows one webhook per URL, and a webhook's secret can't be edited; to change the secret, delete the webhook and create it again with the same value saved as `RAZORPAY_WEBHOOK_SECRET`. Checkout's success callback grants the pass immediately after verifying the payment signature; the webhook is the backstop for buyers who close the tab. Both are idempotent: only the first call that flips an order from `created` to `paid` grants 30 days.
 
 ## PayPal
 

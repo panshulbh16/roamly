@@ -40,7 +40,7 @@ jobs:
     timeout-minutes: 15
     environment:
       name: production
-      url: https://roamly.panshulbh16.workers.dev
+      url: https://heyroamly.com
     concurrency:
       group: production-deploy
       cancel-in-progress: false
@@ -60,4 +60,4 @@ jobs:
       - name: Deploy to Cloudflare
         run: npx wrangler deploy --keep-vars --var GIT_SHA:${{ github.sha }}
       - name: Verify the new version is live and served fresh
-        run: bash scripts/verify-deploy.sh https://roamly.panshulbh16.workers.dev ${{ github.sha }}
+        run: bash scripts/verify-deploy.sh https://heyroamly.com ${{ github.sha }}

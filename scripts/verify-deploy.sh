@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Post-deploy gate: fails unless $1 serves commit $2 within ~60s, with every page uncached and healthy.
+# Post-deploy gate: fails unless $1 serves commit $2 within ~3 min, with every page uncached and healthy.
 set -euo pipefail
 site=${1%/} sha=$2 live=""
 version() { curl -fsS -o /dev/null -D - "$1" | tr -d '\r' | awk -F': ' 'tolower($1)=="x-roamly-version"{print $2}'; }
-for _ in $(seq 1 30); do
+for _ in $(seq 1 90); do
   live=$(version "$site/?deploy=$sha" || true)
   [ "$live" = "$sha" ] && break
   sleep 2
