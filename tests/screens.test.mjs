@@ -63,9 +63,9 @@ test('Plus is clearly a waitlist and guests get a sign-in route back to pricing'
 });
 
 test('Plus shows the visitor currency price',()=>{
- assert.match(render(Pricing,{signedIn:false}),/₹499 \/ month/);
+ assert.match(render(Pricing,{signedIn:false}),/₹499 \/ 30 days/);
  const usd=render(Pricing,{signedIn:true,billingEnabled:true,price:'$10'});
- assert.match(usd,/\$10 \/ month/);
+ assert.match(usd,/\$10 \/ 30 days/);
  assert.doesNotMatch(usd,/₹499/);
 });
 

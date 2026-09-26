@@ -1,3 +1,0 @@
-import { identity,sameOrigin,failure,privateHeaders,ApiError } from "@/lib/server/context";
-import { membership,razorpay,syncSubscription } from "@/lib/billing/razorpay";
-export async function POST(r:Request){try{sameOrigin(r);const user=await identity();const row=await membership(user.id);if(!row?.subscription_id)throw new ApiError(404,"No subscription found.");const current=await syncSubscription(row.subscription_id);if(!["cancelled","completed","expired"].includes(current.status))await razorpay("subscriptions/"+row.subscription_id+"/cancel",{cancel_at_cycle_end:current.status==="active"});await syncSubscription(row.subscription_id);return Response.json({cancelled:true},{headers:privateHeaders});}catch(e){return failure(e);}}
