@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { announcePlus } from "./plus";
 type Status={plus:boolean;until:number;usage?:{limit:number;used:number;remaining:number;resetsAt:string}};
 type Order={orderId:string;amount:number;currency:string;keyId:string;email?:string};
@@ -36,7 +37,7 @@ export function BillingControls({ price = "₹499" }: { price?: string }) {
       <p role="status">{status.usage ? `${status.usage.remaining} of ${status.usage.limit} AI plans remaining today` : "20 AI plans per day"}</p>
       <ul><li>Create personalized AI itineraries with 20 plans per day.</li><li>Host city-based trips, publish your itinerary, and approve requests to join.</li></ul>
       <p className="form-note">Replacing one day uses one plan. Your allowance resets at midnight UTC (5:30 am IST). AI planning is subject to availability.</p>
-      <div className="plus-benefit-actions"><a className="primary" href="/">Plan a trip</a><a className="secondary-button" href="/together?create=1">Create a group trip</a></div>
+      <div className="plus-benefit-actions"><Link className="primary" href="/">Plan a trip</Link><Link className="secondary-button" href="/together?create=1">Create a group trip</Link></div>
       <p className="form-note">Editing, sharing and PDF export are also available on Free.</p>
       <p className="form-note">Current paid period ends {new Date(status.until*1000).toLocaleDateString()}.</p>
     </section>}
