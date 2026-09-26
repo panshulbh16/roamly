@@ -53,7 +53,7 @@ export function Notifications() {
   useEffect(()=>{
     if(!open)return;
     const current:Session={controller:new AbortController(),busy:false};session.current=current;
-    setLoaded(false);setError("");setItems([]);setCursor(null);void load();
+    void load();
     const timer=window.setInterval(()=>{if(document.visibilityState==='visible')void load();},30000);
     return ()=>{window.clearInterval(timer);current.controller.abort();if(session.current===current)session.current=null;};
   },[open,load]);
@@ -69,7 +69,9 @@ export function Notifications() {
       if(session.current===current&&!current.controller.signal.aborted)setError(e instanceof Error?e.message:"Could not mark this notification read. Try again.");
     } finally {current.busy=false;if(session.current===current)setBusy(false);}
   }
-  return <Dialog open={open} onOpenChange={setOpen}>
+  // Start each opening from a clean list; reset here (an event) rather than in the effect.
+  const toggle=(next:boolean)=>{if(next){setLoaded(false);setError("");setItems([]);setCursor(null);}setOpen(next);};
+  return <Dialog open={open} onOpenChange={toggle}>
     <DialogTrigger asChild><button className="notification-trigger" aria-label={unread?`Notifications, ${unread} unread`:"Notifications"} title="Open to check trip updates">
       <Bell size={18}/><span className="hidden lg:inline">Notifications</span>
       {!!unread&&<span className="notification-badge" aria-hidden="true">{unread>99?'99+':unread}</span>}

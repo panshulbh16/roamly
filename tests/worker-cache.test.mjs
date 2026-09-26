@@ -13,4 +13,12 @@ test('only public successful destination GETs are cacheable; shared links cannot
     if(path.startsWith('/share'))assert.equal(r.headers.get('referrer-policy'),'no-referrer');
   }
 });
+test('pages are never cached, so a deploy shows on the next request; the live commit is exposed',async()=>{
+  response=new Response('<!doctype html>',{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'public, s-maxage=31536000'}});
+  let r=await worker.fetch(new Request('https://roamly.test/explore'),{GIT_SHA:'abc123'},{});
+  assert.equal(r.headers.get('cache-control'),'private, no-store');assert.equal(r.headers.get('x-roamly-version'),'abc123');
+  response=new Response('x',{headers:{'Content-Type':'text/javascript','Cache-Control':'public, max-age=31536000, immutable'}});
+  r=await worker.fetch(new Request('https://roamly.test/assets/app-3f2a.js'),{},{});
+  assert.equal(r.headers.get('cache-control'),'public, max-age=31536000, immutable','hashed assets stay cacheable');assert.equal(r.headers.get('x-roamly-version'),null);
+});
 test.after(()=>delete globalThis.__cacheResponse);

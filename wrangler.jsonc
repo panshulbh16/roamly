@@ -13,5 +13,14 @@
   },
   "images": {
     "binding": "IMAGES"
-  }
+  },
+  // Production database; CI applies drizzle/ migrations with `wrangler d1 migrations apply`.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "roamly-db",
+      "database_id": "e41c0511-08df-4191-b2b3-6c7840f49bc2",
+      "migrations_dir": "drizzle"
+    }
+  ]
 }
