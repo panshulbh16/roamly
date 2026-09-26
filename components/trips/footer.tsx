@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { openCookieSettings } from "@/components/Analytics";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 export function TripFooter() {
   const [legal, setLegal] = useState<string | null>(null);
@@ -8,6 +9,7 @@ export function TripFooter() {
         <span>© {new Date().getFullYear()} Roamly. Go your own way.</span>
         <div style={{ display: "flex", gap: 17 }}>
           <button onClick={() => setLegal("Privacy")}>Privacy</button>
+          <button onClick={openCookieSettings}>Cookie settings</button>
           <button onClick={() => setLegal("Travel guidance")}>
             Travel guidance
           </button>
@@ -19,7 +21,7 @@ export function TripFooter() {
           <DialogTitle>{legal}</DialogTitle>
           <DialogDescription>
             {legal === "Privacy" ? (
-              "Roamly stores submitted searches and saved itineraries against your signed-in account. Delete searches in History and saved trips in My trips. Google/email sign-in is handled by Supabase when connected. Your trip preferences are sent to the AI provider only when you request generation. Joining the Plus list stores your account email. Delete individual saved trips in My trips. Avoid entering sensitive medical or personal details. Travel Together stores your drafts, published itineraries, join requests and reports. Published itineraries and your chosen host name are public. Introductions are visible to the host; private meeting details are visible to approved travellers. Withdrawing or cancellation retains the activity record. Public-launch privacy and support details are still being finalized."
+              "Roamly stores submitted searches and saved itineraries against your signed-in account. Delete searches in History and saved trips in My trips. Google/email sign-in is handled by Supabase when connected. Your trip preferences are sent to the AI provider only when you request generation. Joining the Plus list stores your account email. Delete individual saved trips in My trips. Avoid entering sensitive medical or personal details. Travel Together stores your drafts, published itineraries, join requests and reports. Published itineraries and your chosen host name are public. Introductions are visible to the host; private meeting details are visible to approved travellers. Withdrawing or cancellation retains the activity record. Roamly uses Google Analytics to understand how the site is used. Analytics cookies are set only if you accept them; until then Google receives cookieless, anonymous signals. Advertising features are off and no data is sold. Change your choice any time with Cookie settings. Public-launch privacy and support details are still being finalized."
             ) : legal === "Photography" ? (
               <>
                 Photography by{" "}

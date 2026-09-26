@@ -2,7 +2,7 @@
 
 **An AI travel planner that turns a rough idea into a structured, day-by-day itinerary.** Give it a destination, dates, pace and interests — Claude drafts a validated, streamed itinerary, and every trip is saved privately to its owner.
 
-> **Status:** early access · live at https://roamly.panshulbh16.workers.dev · Plus sold as a 30-day pass via Razorpay. Existing itineraries are unverified AI suggestions, not booked plans.
+> **Status:** early access · live at https://heyroamly.com · Plus sold as a 30-day pass via Razorpay. Existing itineraries are unverified AI suggestions, not booked plans.
 
 ![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)
 ![D1](https://img.shields.io/badge/Cloudflare-D1-F38020?logo=cloudflare&logoColor=white)
@@ -47,7 +47,7 @@ Use the checked-in npm lockfile. `npm run db:generate` generates migrations; ins
 
 ## Deploying
 
-Production is the `roamly` Worker on Cloudflare (https://roamly.panshulbh16.workers.dev) with the `roamly-db` D1 database. `wrangler.jsonc` is the single source of the `DB` binding and its `migrations_dir: "drizzle"`.
+Production is the `roamly` Worker on Cloudflare at https://heyroamly.com (www and the old `roamly.panshulbh16.workers.dev` redirect pages there; `/api/` still answers on the old host) with the `roamly-db` D1 database. `wrangler.jsonc` is the single source of the `DB` binding and its `migrations_dir: "drizzle"`.
 
 **Deploys are automatic.** `.github/workflows/ci.yml` runs on every pull request and every push to `main`:
 
@@ -57,7 +57,7 @@ Production is the `roamly` Worker on Cloudflare (https://roamly.panshulbh16.work
    - `npm run build`, then `wrangler deploy --keep-vars --var GIT_SHA:<commit>`
    - `scripts/verify-deploy.sh` fails the run unless the site serves that commit (`X-Roamly-Version` header) with key pages returning 200 and `private, no-store`
 
-So merging to `main` is the release. Pages are never cached (the Worker forces `private, no-store` on HTML), hashed `/assets/` are immutable and renamed each build, and the service worker caches nothing, so the new version shows on the next request. To check what's live: `curl -sI https://roamly.panshulbh16.workers.dev | grep -i x-roamly-version`.
+So merging to `main` is the release. Pages are never cached (the Worker forces `private, no-store` on HTML), hashed `/assets/` are immutable and renamed each build, and the service worker caches nothing, so the new version shows on the next request. To check what's live: `curl -sI https://heyroamly.com | grep -i x-roamly-version`.
 
 The workflow needs the `CLOUDFLARE_API_TOKEN` repository secret: a Cloudflare token from the **Edit Cloudflare Workers** template, which includes Workers Scripts and D1. To replace it, roll the token in Cloudflare and run `gh secret set CLOUDFLARE_API_TOKEN`, pasting at the hidden prompt. To redeploy without a code change, re-run the workflow on `main` from the Actions tab.
 

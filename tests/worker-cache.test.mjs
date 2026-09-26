@@ -21,4 +21,16 @@ test('pages are never cached, so a deploy shows on the next request; the live co
   r=await worker.fetch(new Request('https://roamly.test/assets/app-3f2a.js'),{},{});
   assert.equal(r.headers.get('cache-control'),'public, max-age=31536000, immutable','hashed assets stay cacheable');assert.equal(r.headers.get('x-roamly-version'),null);
 });
+test('old addresses send page visits to heyroamly.com, but APIs like the Razorpay webhook keep working there',async()=>{
+  response=new Response('<!doctype html>',{headers:{'Content-Type':'text/html'}});
+  for(const host of ['roamly.panshulbh16.workers.dev','www.heyroamly.com']){
+    const r=await worker.fetch(new Request(`https://${host}/together?trip=abc`),{},{});
+    assert.equal(r.status,301);assert.equal(r.headers.get('location'),'https://heyroamly.com/together?trip=abc');
+    const api=await worker.fetch(new Request(`https://${host}/api/billing/webhook`,{method:'POST',body:'{}'}),{},{});
+    assert.notEqual(api.status,301,'webhooks are not redirected');
+  }
+  const post=await worker.fetch(new Request('https://roamly.panshulbh16.workers.dev/auth/platform',{method:'POST'}),{},{});
+  assert.notEqual(post.status,301,'only GET/HEAD page visits redirect');
+  assert.equal((await worker.fetch(new Request('https://heyroamly.com/'),{},{})).status,200);
+});
 test.after(()=>delete globalThis.__cacheResponse);
