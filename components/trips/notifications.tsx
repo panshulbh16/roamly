@@ -16,6 +16,7 @@ const messages: Record<string,string> = {
   trip_cancelled:"The host cancelled a trip you requested to join.",
   meeting_updated:"The host updated your trip’s private meeting details.",
   trip_updated:"The host changed the details of a trip you requested or joined.",
+  invite_accepted:"Someone you invited by email joined your trip.",
 };
 async function response(r:Response) {
   const result=await r.json();

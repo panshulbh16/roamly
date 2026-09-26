@@ -57,6 +57,13 @@
       "when": 1790414394644,
       "tag": "0007_trip_updated_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1790415317312,
+      "tag": "0008_outing_invites",
+      "breakpoints": true
     }
   ]
 }
