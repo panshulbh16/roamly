@@ -37,7 +37,7 @@ test('starter is synchronous, bounded and explicitly provisional for all trip le
   }
 });
 
-test('starter appears before network, survives failure, ignores partial output and is replaced only on completion', async () => {
+test('starter appears before network, survives failure, shows validated streamed activities and saves only on completion', async () => {
   const previousFetch = globalThis.fetch, previousWindow = globalThis.window;
   globalThis.window = { scrollTo() {} };
   try {
@@ -59,6 +59,8 @@ test('starter appears before network, survives failure, ignores partial output a
     await tick();
     stream.enqueue(new TextEncoder().encode(JSON.stringify({ type: 'preview', itinerary: { title: 'Partial AI' } }) + '\n'));
     await tick(); assert.doesNotMatch(text(render()), /Partial AI/);
+    stream.enqueue(new TextEncoder().encode(JSON.stringify({ type: 'preview', itinerary: { title: 'Partial AI', days: [{title:'Waterfront morning',activities:[{time:'Morning',title:'Lake walk',description:'Follow the lakeside path.',place:'Nainital'}]}] } }) + '\n'));
+    await tick(); assert.match(text(render()), /Lake walk/); assert.match(text(render()), /AI PREVIEW · DRAFT/); assert.equal(button(render(), 'Save trip'), undefined);
     const trip = { id: '123e4567-e89b-42d3-a456-426614174000', intake: input, itinerary: { ...starterItinerary(input), title: 'Completed personal itinerary' }, source: 'ai', createdAt: '2026-09-19T00:00:00Z' };
     stream.enqueue(new TextEncoder().encode(JSON.stringify({ type: 'complete', trip, historyId: null }) + '\n')); stream.close();
     await tick(); await retry;

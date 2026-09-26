@@ -117,6 +117,7 @@ test('planner sends optional workspace header and validates the provider itinera
         assert.equal(headers.get('x-api-key'),'fixture-key');
         assert.equal(JSON.parse(options.body).model,'claude-opus-5');
         assert.deepEqual(JSON.parse(options.body).output_config,{effort:'low'});
+        assert.deepEqual(JSON.parse(options.body).thinking,{type:'disabled'});
         assert.equal(JSON.parse(options.body).max_tokens,5000);
         assert.match(JSON.parse(options.body).system,/destinationAdvice/);
         assert.match(JSON.parse(options.body).system,/exactly the requested number of days/);

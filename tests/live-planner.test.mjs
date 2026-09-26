@@ -7,7 +7,7 @@ import {parseEnv} from 'node:util';
 import {DatabaseSync} from 'node:sqlite';
 import {build} from 'esbuild';
 
-// Explicit opt-in: makes two paid provider requests. Identity is simulated;
+// Explicit opt-in: makes three paid provider requests. Identity is simulated;
 // this does not test browser login or the development server's D1 database.
 test('live itineraries survive reopening History in an isolated database', {
   skip: process.env.ROAMLY_LIVE_TEST !== '1', timeout: 130000,
@@ -55,7 +55,7 @@ test('live itineraries survive reopening History in an isolated database', {
     };
   }
   try {
-    for(const [destination,days] of [['Auckland',1],['Austria',10]]) {
+    for(const [destination,days] of [['Auckland',1],['Nainital',4],['Austria',10]]) {
       const started=performance.now();
       const response=await app.generate.POST(new Request(origin+'/api/generate',{method:'POST',headers:{origin,'Content-Type':'application/json',Accept:'application/x-ndjson'},body:JSON.stringify({...input,destination,days})}));
       assert.equal(response.status,200);
@@ -84,8 +84,8 @@ test('live itineraries survive reopening History in an isolated database', {
     sql=new DatabaseSync(path);
     const listing=await app.history.GET(new Request(origin+'/api/history'));
     const {entries}=await listing.json();
-    assert.equal(entries.length,2);
-    assert.deepEqual(new Set(entries.map(e=>e.intake.destination)),new Set(['Auckland','Austria']));
+    assert.equal(entries.length,3);
+    assert.deepEqual(new Set(entries.map(e=>e.intake.destination)),new Set(['Auckland','Nainital','Austria']));
     for(const expected of generated) {
       const response=await app.history.GET(new Request(origin+'/api/history?id='+expected.historyId));
       const {entry}=await response.json();

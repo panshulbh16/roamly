@@ -85,9 +85,9 @@ export class AnthropicPlanner implements PlannerProvider {
           model: c.ANTHROPIC_MODEL,
           ...(onPreview ? { stream: true } : {}),
           max_tokens: 5000,
-          // Opus 5 defaults to high effort. Keep bounded travel planning responsive.
-          ...(c.ANTHROPIC_MODEL === "claude-opus-5"
-            ? { output_config: { effort: "low" } }
+          // Bounded itinerary JSON does not need an extra thinking pass.
+          ...(["claude-opus-5", "claude-sonnet-5"].includes(c.ANTHROPIC_MODEL ?? "")
+            ? { thinking: { type: "disabled" }, output_config: { effort: "low" } }
             : {}),
           system:
             "Write keys in this order: title, summary, days, tips, destinationAdvice. Use compact JSON without indentation. Summary: one sentence under 20 words. Activity descriptions: one practical sentence under 12 words; do not repeat the activity title or place. Tips: exactly 2, under 15 words each. Preserve requested day count, route feasibility and destination advice. " +
