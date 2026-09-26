@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { announcePlus } from "./plus";
 type Status={plus:boolean;until:number};
 type Order={orderId:string;amount:number;currency:string;keyId:string;email?:string};
 type Razorpay=new(options:object)=>{open():void;on(event:"payment.failed",cb:(r:{error:{description:string}})=>void):void};
@@ -22,7 +23,7 @@ export function BillingControls({ price = "₹499" }: { price?: string }) {
       const checkout=new Checkout({key:order.keyId,order_id:order.orderId,amount:order.amount,currency:order.currency,name:"Roamly",description:"Plus · 30 days",prefill:{email:order.email},theme:{color:"#2f5d46"},
         modal:{ondismiss:()=>setBusy(false)},
         handler:async(r:{razorpay_order_id:string;razorpay_payment_id:string;razorpay_signature:string})=>{
-          try{await request("confirm","POST",{orderId:r.razorpay_order_id,paymentId:r.razorpay_payment_id,signature:r.razorpay_signature});setStatus(await request("status"));setMessage("Payment received. Plus is active.");}
+          try{await request("confirm","POST",{orderId:r.razorpay_order_id,paymentId:r.razorpay_payment_id,signature:r.razorpay_signature});const next=await request("status");setStatus(next);setMessage("Payment received. Plus is active.");announcePlus({plus:!!next.plus,until:next.until});}
           catch(e){setMessage((e as Error).message);}finally{setBusy(false);}
         }});
       checkout.on("payment.failed",r=>{setMessage("Payment failed: "+r.error.description);setBusy(false);});

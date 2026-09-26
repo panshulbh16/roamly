@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { Notifications } from "./notifications";
+import { PlusProvider, usePlus, PlusBadge } from "./plus";
 import type { AppUser } from "@/lib/auth/server";
 import { usePathname } from "next/navigation";
 import {
@@ -39,8 +40,8 @@ export function AppShell({
   const path = usePathname();
   const name = user?.displayName ?? "Guest";
   return (
+    <PlusProvider key={path} signedIn={!!user}>
     <SidebarProvider
-      key={path}
       style={{ "--sidebar-width": "225px" } as React.CSSProperties}
     >
       <Sidebar>
@@ -77,14 +78,7 @@ export function AppShell({
             <Bookmark size={17} />
             Find a little inspiration
           </Link>
-          <div className="side-tip">
-            <Leaf size={20} />
-            <strong>Less planning. More living.</strong>
-            <p>A thoughtful trip starts with what you love.</p>
-            <Link href="/pricing" className="secondary-button">
-              Discover Roamly Plus <ArrowUpRight size={13} />
-            </Link>
-          </div>
+          <SideTip />
           <Link
             href="/auth"
             className="account"
@@ -96,7 +90,7 @@ export function AppShell({
                 {name.includes("@") ? "Your account" : name.split(" ")[0]}
               </strong>
               <div style={{ color: "#939b95", fontSize: 11, marginTop: 3 }}>
-                {user ? "Manage account" : "Sign in to save your trips"}
+                {user ? <AccountLine /> : "Sign in to save your trips"}
               </div>
             </div>
             <ChevronDown size={14} style={{ marginLeft: "auto" }} />
@@ -134,10 +128,7 @@ export function AppShell({
                 </DialogDescription>
               </DialogContent>
             </Dialog>
-            <Link href="/pricing" className="text-button">
-              <Sparkles size={15} />
-              Roamly Plus
-            </Link>
+            <PlusLink />
             <Link href="/auth" className="secondary-button account-button">
               <UserRound size={16} />
               {user ? "Account" : "Sign in"}
@@ -147,5 +138,45 @@ export function AppShell({
         {children}
       </SidebarInset>
     </SidebarProvider>
+    </PlusProvider>
   );
+}
+
+function SideTip() {
+  const plus = usePlus();
+  if (plus?.plus)
+    return (
+      <div className="side-tip side-tip-plus">
+        <PlusBadge />
+        <strong>Plus is on.</strong>
+        <p>20 AI plans a day and Travel Together hosting, until {new Date(plus.until * 1000).toLocaleDateString()}.</p>
+        <Link href="/together" className="secondary-button">
+          Host a trip <ArrowUpRight size={13} />
+        </Link>
+      </div>
+    );
+  return (
+    <div className="side-tip">
+      <Leaf size={20} />
+      <strong>Less planning. More living.</strong>
+      <p>A thoughtful trip starts with what you love.</p>
+      <Link href="/pricing" className="secondary-button">
+        Discover Roamly Plus <ArrowUpRight size={13} />
+      </Link>
+    </div>
+  );
+}
+
+function PlusLink() {
+  const plus = usePlus()?.plus;
+  return (
+    <Link href="/pricing" className={plus ? "text-button plus-link" : "text-button"}>
+      <Sparkles size={15} />
+      {plus ? "Plus active" : "Roamly Plus"}
+    </Link>
+  );
+}
+
+function AccountLine() {
+  return usePlus()?.plus ? <>Plus member</> : <>Manage account</>;
 }

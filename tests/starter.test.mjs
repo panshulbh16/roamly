@@ -15,7 +15,7 @@ const compiled = await build({ stdin: { contents: `export {Workspace} from './co
   b.onResolve({ filter: /^next\/link$/ }, () => ({ path: 'next/link.js', external: true }));
   b.onResolve({ filter: /^react$/ }, () => ({ path: 'react', namespace: 'fixture' }));
   b.onResolve({ filter: /^next\/navigation$/ }, () => ({ path: 'navigation', namespace: 'fixture' }));
-  b.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => ({ loader: 'js', resolveDir: process.cwd(), contents: path === 'navigation' ? 'const params=new URLSearchParams(); export const useSearchParams=()=>params; export const usePathname=()=>"/";' : `export * from ${JSON.stringify(join(process.cwd(), 'node_modules/react/index.js'))}; export const useState=globalThis.__starterHooks.useState; export const useRef=globalThis.__starterHooks.useRef; export const useEffect=()=>{};` }));
+  b.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => ({ loader: 'js', resolveDir: process.cwd(), contents: path === 'navigation' ? 'const params=new URLSearchParams(); export const useSearchParams=()=>params; export const usePathname=()=>"/";' : `export * from ${JSON.stringify(join(process.cwd(), 'node_modules/react/index.js'))}; export const useState=globalThis.__starterHooks.useState; export const useRef=globalThis.__starterHooks.useRef; export const useEffect=()=>{}; export const useContext=()=>null;` }));
 } }] });
 writeFileSync(join(dir, 'fixture.mjs'), compiled.outputFiles[0].text);
 const { Workspace, starterItinerary } = await import(pathToFileURL(join(dir, 'fixture.mjs')));
