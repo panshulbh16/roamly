@@ -27,7 +27,7 @@ export function Together({signedIn,plus,membershipUnavailable=false}:{signedIn:b
     }catch(e){if(request===version.current)setError((e as Error).message);}
     finally{if(request===version.current)setLoading(false);}
   }
-  useEffect(()=>{const id=new URLSearchParams(window.location.search).get('trip');void load(id??undefined,false);return()=>{version.current++;};},[]); // Initial shared link; filters apply on submit.
+  useEffect(()=>{const params=new URLSearchParams(window.location.search);const id=params.get('trip');if(!id&&params.get('create')==='1'){switchTab('create');}else void load(id??undefined,false);return()=>{version.current++;};},[]); // Initial shared link; filters apply on submit.
   function open(id:string){window.history.replaceState(null,'','/together?trip='+encodeURIComponent(id));setDraft(null);setNotice('');void load(id);}
   function switchTab(next:typeof tab){version.current++;setTab(next);setTrip(null);setError('');setNotice('');window.history.replaceState(null,'','/together');if(next==='create'){setLoading(false);setDraft(d=>d??blank());}else void load(undefined,next==='mine');}
   async function act(action:string,extra:Record<string,unknown>={},id=trip?.id){

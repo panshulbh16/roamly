@@ -404,7 +404,14 @@ test('Razorpay checkout verifies price, reuses subscriptions, verifies signed we
     const webhook=()=>new Request(origin+'/api/billing/webhook',{method:'POST',headers:{'x-razorpay-signature':signature},body:event});
     assert.equal((await app.webhook.POST(webhook())).status,200);assert.equal((await app.webhook.POST(webhook())).status,200);
     assert.equal(app.billing.hasPlus(await app.billing.membership('subscriber')),true);
+    const fresh=await (await app.billingStatus.GET()).json();
+    assert.equal(fresh.usage.limit,20);assert.equal(fresh.usage.remaining,20);
     for(let i=0;i<20;i++)await app.planner.reserveUsage('subscriber');
+    const exhausted=await (await app.billingStatus.GET()).json();
+    assert.equal(exhausted.usage.remaining,0);assert.equal(exhausted.usage.used,20);
+    assert.ok(Date.parse(exhausted.usage.resetsAt)>Date.now());
+    user('usage-other');const isolated=await (await app.billingStatus.GET()).json();
+    assert.equal(isolated.usage.limit,5);assert.equal(isolated.usage.remaining,5);user('subscriber');
     await assert.rejects(()=>app.planner.reserveUsage('subscriber'),e=>e.status===429);
     for(let i=0;i<5;i++)await app.planner.reserveUsage('free-subscriber');
     await assert.rejects(()=>app.planner.reserveUsage('free-subscriber'),e=>e.status===429);

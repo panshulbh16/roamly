@@ -1407,3 +1407,9 @@ html { scrollbar-gutter: stable; }
 .notification-empty h3 { font-size: 18px; font-weight: 600; }
 .notification-empty p { margin: 10px 0 16px; font-size: 14px; line-height: 1.6; color: #52665a; }
 @media (max-width: 640px) { .topbar .top-actions { gap: 8px; } .notification-dialog { padding: 24px 16px; } }
+
+.plus-benefits { margin-block: 1.5rem; }
+.plus-benefits h3 { margin-bottom: .75rem; }
+.plus-benefits ul { padding-left: 1.25rem; margin-block: 1rem; }
+.plus-benefits li { margin-bottom: .5rem; }
+.plus-benefit-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-block: 1rem; }
