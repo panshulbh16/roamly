@@ -2,7 +2,7 @@
 
 **An AI travel planner that turns a rough idea into a structured, day-by-day itinerary.** Give it a destination, dates, pace and interests — Claude drafts a validated, streamed itinerary, and every trip is saved privately to its owner.
 
-> **Status:** early access · private deployment · no payments collected. Existing itineraries are unverified AI suggestions, not booked plans.
+> **Status:** early access · live at https://roamly.panshulbh16.workers.dev · Plus sold as a 30-day pass via Razorpay. Existing itineraries are unverified AI suggestions, not booked plans.
 
 ![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)
 ![D1](https://img.shields.io/badge/Cloudflare-D1-F38020?logo=cloudflare&logoColor=white)
@@ -45,10 +45,22 @@ The local Cloudflare runtime has a separate database; it does not copy hosted tr
 
 Use the checked-in npm lockfile. `npm run db:generate` generates migrations; inspect SQL before deployment. Never edit applied migrations. `npm run build` validates the production Worker build. `npx tsc --noEmit` validates TypeScript. Domain/security migration tests are in `tests/roamly.test.mjs`.
 
+## Deploying
+
+Production is the `roamly` Worker on Cloudflare with the `roamly-db` D1 database (binding `DB`, configured in `vite.config.ts`).
+
+1. `npm run build`
+2. Apply any new migration: `npx wrangler d1 execute roamly-db --remote --file drizzle/<new>.sql`. Migrations are applied by hand; there is no migrations table.
+3. `npx wrangler deploy --keep-vars`
+
+Set configuration as **secrets** (`npx wrangler secret put NAME --name roamly`, or `npx wrangler secret bulk` for several), never as dashboard *Text* variables. A secret can't share a name with a Text variable, and Text values are readable in the dashboard. Required: `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `AI_MONTHLY_REQUEST_LIMIT`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_AUTH_ENABLED`, and the Razorpay settings in `docs/razorpay-setup.md`.
+
+ChatGPT identity headers (`oai-authenticated-user-*`) are trusted only when the host is `*.chatgpt.site`, where that proxy sets them. On workers.dev or a custom domain, sign-in is Supabase only.
+
 ## Commercial launch gates
 1. Configure and live-test provider credentials, latency, failure behavior and spend caps.
-2. Add a payment provider, verified webhook handling, idempotent purchase records, entitlement enforcement, refunds and tax handling. The Plus waitlist currently validates interest only; no checkout or fabricated purchase success is included.
-3. Confirm public sign-in and audience settings; this deployment is owner-only.
+2. Payments: Razorpay Orders checkout, signature-verified callback and `order.paid` webhook, idempotent `orders` records and Plus entitlement are implemented. Still needed: a live test purchase and refund, refund handling in-app, and tax handling.
+3. Confirm public sign-in and audience settings for the Worker deployment.
 4. Set business identity, support address, retention/export/deletion flow, privacy policy and terms for the actual operator.
 5. Integrate verified travel/booking data if claiming current prices, availability or affiliate revenue. Existing itineraries are unverified suggestions.
 6. Run real-browser/mobile/accessibility checks, load tests, live API integration tests, account-isolation tests, backups/restore, alerts, and operational review before paid launch.
