@@ -47,13 +47,23 @@ Use the checked-in npm lockfile. `npm run db:generate` generates migrations; ins
 
 ## Deploying
 
-Production is the `roamly` Worker on Cloudflare with the `roamly-db` D1 database (binding `DB`, configured in `vite.config.ts`).
+Production is the `roamly` Worker on Cloudflare (https://roamly.panshulbh16.workers.dev) with the `roamly-db` D1 database. `wrangler.jsonc` is the single source of the `DB` binding and its `migrations_dir: "drizzle"`.
 
-1. `npm run build`
-2. Apply any new migration: `npx wrangler d1 execute roamly-db --remote --file drizzle/<new>.sql`. Migrations are applied by hand; there is no migrations table.
-3. `npx wrangler deploy --keep-vars`
+**Deploys are automatic.** `.github/workflows/ci.yml` runs on every pull request and every push to `main`:
 
-Set configuration as **secrets** (`npx wrangler secret put NAME --name roamly`, or `npx wrangler secret bulk` for several), never as dashboard *Text* variables. A secret can't share a name with a Text variable, and Text values are readable in the dashboard. Required: `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `AI_MONTHLY_REQUEST_LIMIT`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_AUTH_ENABLED`, and the Razorpay settings in `docs/razorpay-setup.md`.
+1. **Test** on Ubuntu and macOS: `tsc --noEmit`, `npm run lint`, `npm test` (includes the production build) and `tests/storage_test.py`.
+2. **Deploy**, only on `main` and only after every test passes, one deploy at a time:
+   - `wrangler d1 migrations apply roamly-db --remote`, which applies only new `drizzle/` files (tracked in `d1_migrations`)
+   - `npm run build`, then `wrangler deploy --keep-vars --var GIT_SHA:<commit>`
+   - `scripts/verify-deploy.sh` fails the run unless the site serves that commit (`X-Roamly-Version` header) with key pages returning 200 and `private, no-store`
+
+So merging to `main` is the release. Pages are never cached (the Worker forces `private, no-store` on HTML), hashed `/assets/` are immutable and renamed each build, and the service worker caches nothing, so the new version shows on the next request. To check what's live: `curl -sI https://roamly.panshulbh16.workers.dev | grep -i x-roamly-version`.
+
+The workflow needs the `CLOUDFLARE_API_TOKEN` repository secret: a Cloudflare token from the **Edit Cloudflare Workers** template, which includes Workers Scripts and D1. To replace it, roll the token in Cloudflare and run `gh secret set CLOUDFLARE_API_TOKEN`, pasting at the hidden prompt. To redeploy without a code change, re-run the workflow on `main` from the Actions tab.
+
+New migrations: `npm run db:generate` (or `npx drizzle-kit generate --custom` for triggers), review the SQL, and commit. CI applies it before the new code goes live, so keep migrations additive.
+
+App configuration lives in Worker **secrets** (`npx wrangler secret put NAME --name roamly`, or `npx wrangler secret bulk` for several). Never add dashboard *Text* variables: a secret can't share a name with one, and Text values are readable in the dashboard. `--keep-vars` preserves secrets across deploys. Required: `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `AI_MONTHLY_REQUEST_LIMIT`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_AUTH_ENABLED`, the Razorpay settings in `docs/razorpay-setup.md`, and for email invites `RESEND_API_KEY`, `EMAIL_FROM` and `SUPABASE_SERVICE_ROLE_KEY`.
 
 ChatGPT identity headers (`oai-authenticated-user-*`) are trusted only when the host is `*.chatgpt.site`, where that proxy sets them. On workers.dev or a custom domain, sign-in is Supabase only.
 
