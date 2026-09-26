@@ -2,7 +2,7 @@
 
 Run `npm run test:unit` for isolated application logic and server-rendered component tests. Run `npm test` for the build and complete JavaScript regression suite, including API/database integration tests. Run `python3 tests/storage_test.py` for the existing SQLite capacity and ownership checks.
 
-Tests mock external services; the live planner suite is skipped unless explicitly enabled with `ROAMLY_LIVE_TEST=1`. Enabling it makes two paid provider requests.
+Tests mock external services; the live planner suite is skipped unless explicitly enabled with `ROAMLY_LIVE_TEST=1`. Enabling it makes three paid provider requests.
 
 | Application module | Test files and scope |
 | --- | --- |

@@ -332,7 +332,8 @@ export function Workspace({
     setError("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
-  const draft = starter ?? preview;
+  const showingPreview = busy && !!preview?.days?.some(day => day.activities.length > 0);
+  const draft = showingPreview ? preview : starter ?? preview;
   const cards = <DestinationCarousel />;
   const signature = getTripSignature(trip?.intake ?? form);
   return (
@@ -341,10 +342,10 @@ export function Workspace({
       {!signedIn && <p className="small-tip">Plan a trip without signing in. <Link href="/auth?returnTo=%2F">Sign in</Link> to keep future searches in your history and save trips. Guest searches aren’t saved to an account.</p>}
       {draft ? (
         <div>
-          <span className="eyebrow">{starter ? "INSTANT STARTER · DRAFT" : "Your itinerary is taking shape"}</span>
+          <span className="eyebrow">{showingPreview ? "AI PREVIEW · DRAFT" : "INSTANT STARTER · DRAFT"}</span>
           <h1 className="trip-title">{draft.title ?? `Planning ${form.destination}`}</h1>
           {draft.summary && <p className="subtext">{draft.summary}</p>}
-          {busy && <p role="status"><LoaderCircle size={16} className="animate-spin inline" /> Personalizing your trip… {preview?.days?.length ?? 0} of {form.days} days started. This starter will be replaced when the full itinerary is ready.</p>}
+          {busy && <p role="status"><LoaderCircle size={16} className="animate-spin inline" /> Personalizing your trip… {preview?.days?.length ?? 0} of {form.days} days started. Activities appear as they arrive. Saving unlocks when the full itinerary is validated.</p>}
           {error && <p role="alert" className="error">{error} Your starter outline is still available below.</p>}
           <div className="trip-actions">
             <button className="text-button" onClick={() => { generation.current?.abort(); generation.current = null; setStarter(null); setPreview(null); setBusy(false); setError(""); }}>Edit trip details</button>
