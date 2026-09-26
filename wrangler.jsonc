@@ -14,6 +14,13 @@
   "images": {
     "binding": "IMAGES"
   },
+  // heyroamly.com is the site; www and the old workers.dev address redirect to it (see worker/index.ts).
+  // Keep the old workers.dev address alive: it redirects pages and still serves /api/ (Razorpay webhook).
+  "workers_dev": true,
+  "routes": [
+    { "pattern": "heyroamly.com", "custom_domain": true },
+    { "pattern": "www.heyroamly.com", "custom_domain": true }
+  ],
   // Production database; CI applies drizzle/ migrations with `wrangler d1 migrations apply`.
   "d1_databases": [
     {

@@ -34,6 +34,11 @@ interface ExecutionContext {
 // dangerouslyAllowSVG: true in next.config.js and uncomment below:
 // const imageConfig: ImageConfig = { dangerouslyAllowSVG: true };
 
+const CANONICAL_HOST = "heyroamly.com";
+// Old addresses send page visits to heyroamly.com. /api/ stays served on them, so integrations
+// registered with the old URL (e.g. the Razorpay webhook) keep working.
+const REDIRECT_HOSTS = new Set(["www.heyroamly.com", "roamly.panshulbh16.workers.dev"]);
+
 const worker = {
   async fetch(
     request: Request,
@@ -41,6 +46,12 @@ const worker = {
     ctx: ExecutionContext,
   ): Promise<Response> {
     const url = new URL(request.url);
+    if (REDIRECT_HOSTS.has(url.hostname) && (request.method === "GET" || request.method === "HEAD") && !url.pathname.startsWith("/api/")) {
+      url.protocol = "https:";
+      url.hostname = CANONICAL_HOST;
+      url.port = "";
+      return Response.redirect(url.toString(), 301);
+    }
 
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];
