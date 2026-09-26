@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { PWARegister } from "@/components/PWARegister";
+import { Analytics } from "@/components/Analytics";
 
 export const metadata: Metadata = {
   title: "Roamly — A trip that feels like you",
@@ -20,7 +21,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}<PWARegister /></body>
+      <body>{children}<PWARegister /><Analytics id="G-T273L8E2F5" site="Roamly" accent="#25664f" /></body>
     </html>
   );
 }
