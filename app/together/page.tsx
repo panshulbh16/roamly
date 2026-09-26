@@ -8,5 +8,5 @@ export default async function Page(){
   const user=await currentUser();
   let plus=false, membershipUnavailable=false;
   try {plus=!!user && hasPlus(await membership(user.id));} catch {membershipUnavailable=true;}
-  return <AppShell user={user}><Together signedIn={!!user} plus={plus} membershipUnavailable={membershipUnavailable}/></AppShell>;
+  return <AppShell user={user}><Together signedIn={!!user} plus={plus} membershipUnavailable={membershipUnavailable} hostName={user&&!user.displayName.includes("@")?user.displayName.split(" ")[0]:""}/></AppShell>;
 }

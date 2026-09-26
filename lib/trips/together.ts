@@ -5,8 +5,9 @@ export const outingSchema = z.object({
   city: short(100), destination: short(100),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v => { const d=new Date(v+"T00:00:00Z"); return !isNaN(+d)&&d.toISOString().slice(0,10)===v; }),
   capacity: z.number().int().min(1).max(20),
-  summary: short(1000), cost: z.number().int().min(0).max(1000000),
-  days: z.array(short(2000)).min(1).max(10),
+  // Only the basics are required; the plan can be added now or later.
+  summary: z.string().trim().max(1000), cost: z.number().int().min(0).max(1000000),
+  days: z.array(z.string().trim().max(2000)).max(10).transform(days => days.filter(Boolean)),
   meeting: z.string().trim().max(2000),
 });
 export type OutingInput = z.infer<typeof outingSchema>;

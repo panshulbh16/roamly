@@ -455,14 +455,13 @@ test('Travel Together: Plus hosting, private drafts, requests, capacity and life
     guest();assert.equal((await post('save',{trip})).status,401);
     user('together-host');assert.equal((await post('save',{trip})).status,403);plus();
     const foreign=req('/api/together',{action:'save',id,trip});foreign.headers.set('origin','https://foreign.test');assert.equal((await app.together.POST(foreign)).status,403);
-    for(const patch of [{capacity:0},{capacity:21},{days:[]},{startDate:'2026-02-30'},{startDate:'2020-01-01'},{cost:-1},{title:'  '},{meeting:'x'.repeat(2001)}])assert.equal((await post('save',{trip:{...trip,...patch}})).status,400);
+    for(const patch of [{capacity:0},{capacity:21},{days:Array(11).fill('x')},{startDate:'2026-02-30'},{startDate:'2020-01-01'},{cost:-1},{title:'  '},{city:''},{hostName:''},{meeting:'x'.repeat(2001)}])assert.equal((await post('save',{trip:{...trip,...patch}})).status,400);
     assert.equal((await post('save',{trip})).status,200);
     assert.equal((await post('save',{trip})).status,200,'retry saves same draft');
     guest();assert.equal((await get()).status,404);
     user('together-stranger');assert.equal((await post('publish')).status,404);
     user('together-host');assert.equal((await post('close')).status,409,'cannot make unpublished draft public by closing it');
     assert.equal((await post('publish')).status,200);
-    assert.equal((await post('save',{trip:{...trip,title:'Bait and switch'}})).status,409);
     assert.equal((await post('join',{name:'Host',message:'Joining my own trip'})).status,400);
     guest();let publicView=await (await get()).json();assert.equal(publicView.trip.meeting,undefined);assert.equal(publicView.trip.owner,undefined);assert.deepEqual(publicView.requests,[]);
     const list=await (await app.together.GET(req('/api/together?city=bareilly&destination=nain&date='+date,undefined,'GET'))).json();assert.ok(list.trips.some(t=>t.id===id));assert.ok(!JSON.stringify(list).includes('PRIVATE'));
@@ -474,6 +473,13 @@ test('Travel Together: Plus hosting, private drafts, requests, capacity and life
     user('together-host');let detail=await (await get()).json();assert.equal(detail.requests.length,2);
     const approvals=await Promise.all([post('approve',{member:'together-one'}),post('approve',{member:'together-two'})]);assert.deepEqual(approvals.map(r=>r.status).sort(),[200,409]);
     const approved=sql.prepare("SELECT member FROM outing_requests WHERE trip_id=? AND status='approved'").get(id).member;
+    // Published trips are editable; everyone who requested or joined is told, and places can't drop below approvals.
+    sql.prepare("INSERT INTO subscriptions (owner,status,current_end,paid_count) VALUES ('together-stranger','active',?,1)").run(Math.floor(Date.now()/1000)+86400);
+    user('together-stranger');assert.equal((await post('save',{trip:{...trip,title:'Hijacked'}})).status,409,'a Plus member cannot edit someone else’s trip');
+    user('together-host');assert.equal((await post('save',{trip:{...trip,title:'Nainital, slower',days:['Lake walk','']}})).status,200);
+    assert.equal(sql.prepare("SELECT count(*) n FROM notifications WHERE trip_id=? AND type='trip_updated'").get(id).n,2);
+    assert.equal(sql.prepare("SELECT status FROM outings WHERE id=?").get(id).status,'open','editing keeps it published');
+    guest();assert.deepEqual((await (await get()).json()).trip.days,['Lake walk'],'empty days are dropped');
     user(approved);detail=await (await get()).json();assert.equal(detail.trip.meeting,trip.meeting);assert.deepEqual(detail.requests,[]);
     assert.equal((await post('report',{reason:'A concern that should stay private'})).status,200);assert.equal(sql.prepare('SELECT count(*) n FROM outing_reports WHERE trip_id=?').get(id).n,1);
     user('together-host');sql.prepare("UPDATE subscriptions SET current_end=0 WHERE owner='together-host'").run();
@@ -483,10 +489,23 @@ test('Travel Together: Plus hosting, private drafts, requests, capacity and life
     user('together-host');assert.equal((await post('close')).status,200);assert.equal((await post('publish')).status,403,'expired host cannot republish');
     const other=approved==='together-one'?'together-two':'together-one';assert.equal((await post('approve',{member:other})).status,409);
     assert.equal((await post('cancel')).status,200);assert.equal((await (await get()).json()).trip.status,'cancelled');
+    user('together-host');sql.prepare("UPDATE subscriptions SET current_end=? WHERE owner='together-host'").run(Math.floor(Date.now()/1000)+86400);assert.equal((await post('save',{trip})).status,409,'cancelled trips cannot be edited');
     user(other);assert.equal((await post('withdraw')).status,200);assert.equal((await (await get()).json()).trip.requestStatus,'withdrawn');
   } finally {
-    sql.prepare('DELETE FROM outing_reports WHERE trip_id=?').run(id);sql.prepare('DELETE FROM outing_requests WHERE trip_id=?').run(id);sql.prepare('DELETE FROM outings WHERE id=?').run(id);sql.prepare("DELETE FROM subscriptions WHERE owner='together-host'").run();guest();
+    sql.prepare('DELETE FROM outing_reports WHERE trip_id=?').run(id);sql.prepare('DELETE FROM outing_requests WHERE trip_id=?').run(id);sql.prepare('DELETE FROM outings WHERE id=?').run(id);sql.prepare("DELETE FROM subscriptions WHERE owner IN ('together-host','together-stranger')").run();sql.prepare('DELETE FROM notifications WHERE trip_id=?').run(id);guest();
   }
+});
+
+test('Together: publish straight from the editor with only the basics',async()=>{
+  const id=crypto.randomUUID(), date=new Date(Date.now()+86400000).toISOString().slice(0,10);
+  const basics={id,title:'Weekend in the hills',hostName:'Ana',city:'Delhi',destination:'Mussoorie',startDate:date,capacity:3,summary:'',cost:0,days:[''],meeting:''};
+  sql.prepare("INSERT INTO subscriptions (owner,status,current_end,paid_count) VALUES ('quick-host','active',?,1)").run(Math.floor(Date.now()/1000)+86400);
+  try {
+    user('quick-host');
+    assert.equal((await app.together.POST(req('/api/together',{action:'save',id,trip:basics,publish:true}))).status,200);
+    context.headers=new Headers();const view=await (await app.together.GET(req('/api/together?id='+id,undefined,'GET'))).json();
+    assert.equal(view.trip.status,'open');assert.deepEqual(view.trip.days,[]);assert.equal(view.trip.summary,'');
+  } finally {sql.prepare('DELETE FROM outings WHERE id=?').run(id);sql.prepare("DELETE FROM subscriptions WHERE owner='quick-host'").run();context.headers=new Headers();}
 });
 
 test('discarding a private Together draft never exposes it',async()=>{
