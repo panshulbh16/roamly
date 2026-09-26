@@ -59,6 +59,7 @@ import { BudgetSelector, TripCostResult } from "@/components/trips/trip-cost";
 import { DestinationAdvice } from "@/components/trips/destination-advice";
 import { intakeSchema, type Trip, type Intake, type Itinerary } from "@/lib/trips/schema";
 import { consumePlannerStream, type Preview } from "@/lib/trips/stream";
+import { usePlus } from "@/components/trips/plus";
 type DestinationSuggestion = { name: string; kind: "city" | "country" | "continent" };
 const interests = [
   { name: "Nature", icon: Leaf },
@@ -126,6 +127,7 @@ export function Workspace({
   signedIn?: boolean;
 }) {
   const searchParams = useSearchParams();
+  const plus = usePlus();
   const [form, setForm] = useState<Intake>(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -677,7 +679,9 @@ export function Workspace({
                 </button>
                 <p className="form-note">
                   {aiReady
-                    ? "Personalized around you. Free: 5 plans/day · Plus: 20."
+                    ? plus?.plus
+                      ? "Plus · 20 AI plans a day, personalized around you."
+                      : "Personalized around you. Free: 5 plans/day · Plus: 20."
                     : "Early access · Searches are saved to History. AI planning opens soon."}
                 </p>
               </form>

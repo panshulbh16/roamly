@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { sqliteTable, text, integer, index, primaryKey } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index, primaryKey, uniqueIndex } from "drizzle-orm/sqlite-core";
 export const trips = sqliteTable(
   "trips",
   {
@@ -47,6 +47,16 @@ export const subscriptions = sqliteTable("subscriptions", {
   checkedAt: integer("checked_at").notNull().default(0),
 }, t => [index("idx_subscription_id").on(t.subscriptionId)]);
 
+// One-time Plus passes (Razorpay Orders); paying flips status created -> paid exactly once.
+export const orders = sqliteTable("orders", {
+  id: text("id").primaryKey(),
+  owner: text("owner").notNull(),
+  amount: integer("amount").notNull(),
+  currency: text("currency").notNull(),
+  status: text("status").notNull().default("created"),
+  paymentId: text("payment_id"),
+}, t => [index("idx_orders_owner").on(t.owner)]);
+
 export const outings = sqliteTable("outings", {
   id: text("id").primaryKey(), owner: text("owner").notNull(),
   city: text("city").notNull(), destination: text("destination").notNull(),
@@ -66,6 +76,18 @@ export const outingReports = sqliteTable("outing_reports", {
   reporter: text("reporter").notNull(), reason: text("reason").notNull(),
   createdAt: text("created_at").notNull(),
 }, t => [primaryKey({columns:[t.tripId,t.reporter]})]);
+
+// Email invitations: only a SHA-256 of the link token is stored; each link works once, for 14 days.
+export const outingInvites = sqliteTable("outing_invites", {
+  id: text("id").primaryKey(),
+  tripId: text("trip_id").notNull().references(()=>outings.id),
+  email: text("email").notNull(),
+  tokenHash: text("token_hash").notNull(),
+  status: text("status").notNull().default("sent"),
+  member: text("member"),
+  createdAt: text("created_at").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+}, t => [uniqueIndex("idx_outing_invites_trip_email").on(t.tripId,t.email),uniqueIndex("idx_outing_invites_token").on(t.tokenHash)]);
 
 // Event history deliberately survives a trip's deletion; trip links re-check access.
 export const notifications = sqliteTable("notifications", {

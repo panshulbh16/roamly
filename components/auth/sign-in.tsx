@@ -19,8 +19,10 @@ export function SignIn({
   user,
   returnTo,
   callbackError,
+  platform = false,
 }: {
   enabled: boolean;
+  platform?: boolean;
   user: AppUser | null;
   returnTo: string;
   callbackError: boolean;
@@ -220,10 +222,12 @@ export function SignIn({
               These options need the site owner’s authentication setup.{" "}
               {user
                 ? "Your current account and history still work."
-                : "You can use the existing ChatGPT sign-in below."}
+                : platform
+                  ? "You can use the existing ChatGPT sign-in below."
+                  : "Sign-in will be available shortly."}
             </div>
           )}
-          {!user && (
+          {!user && platform && (
             <form
               method="post"
               action={"/auth/platform?returnTo=" + encodeURIComponent(returnTo)}

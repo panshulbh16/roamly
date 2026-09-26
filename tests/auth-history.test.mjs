@@ -5,8 +5,8 @@ import {build} from 'esbuild';
 import {readFileSync,readdirSync} from 'node:fs';
 const sql=new DatabaseSync(':memory:');
 for(const file of readdirSync('drizzle').filter(f=>f.endsWith('.sql')).sort())sql.exec(readFileSync('drizzle/'+file,'utf8'));
-class Statement{constructor(q,values=[]){this.q=q;this.values=values}bind(...values){return new Statement(this.q,values)}async first(){return sql.prepare(this.q).get(...this.values)??null}async all(){return {results:sql.prepare(this.q).all(...this.values),success:true,meta:{}}}async run(){sql.prepare(this.q).run(...this.values);return {success:true,results:[],meta:{}}}}
-const jar=new Map();const context={env:{DB:{prepare:q=>new Statement(q)}},headers:new Headers(),jar,redirect:p=>{throw Error('REDIRECT:'+p)}};
+class Statement{constructor(q,values=[]){this.q=q;this.values=values}bind(...values){return new Statement(this.q,values)}async first(){return sql.prepare(this.q).get(...this.values)??null}async all(){return {results:sql.prepare(this.q).all(...this.values),success:true,meta:{}}}async run(){const r=sql.prepare(this.q).run(...this.values);return {success:true,results:[],meta:{changes:Number(r.changes)}}}}
+const jar=new Map();const context={env:{DB:{prepare:q=>new Statement(q),batch:async list=>{sql.exec('BEGIN');try{const out=[];for(const st of list)out.push(await st.run());sql.exec('COMMIT');return out;}catch(e){sql.exec('ROLLBACK');throw e;}}}},headers:new Headers(),jar,redirect:p=>{throw Error('REDIRECT:'+p)}};
 globalThis.__roamlyTest=context;
 const compiled=await build({entryPoints:['tests/auth-history-entry.ts'],bundle:true,write:false,format:'esm',platform:'node',plugins:[{name:'test-runtime',setup(b){b.onResolve({filter:/^(cloudflare:workers|next\/headers|next\/navigation)$/},args=>({path:args.path,namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},args=>({loader:'js',contents:args.path==='cloudflare:workers'?'export const env=globalThis.__roamlyTest.env':args.path==='next/navigation'?'export const redirect=globalThis.__roamlyTest.redirect':`export async function headers(){return globalThis.__roamlyTest.headers} export async function cookies(){const jar=globalThis.__roamlyTest.jar;return {get:n=>jar.has(n)?{name:n,value:jar.get(n).value}:undefined,getAll:()=>Array.from(jar,([name,c])=>({name,value:c.value})),set:(name,value,options)=>jar.set(name,{value,options}),delete:name=>jar.delete(name)}}`}));}}]});
 const app=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text).toString('base64'));
@@ -176,7 +176,20 @@ test('planner rejects null and malformed content blocks with a controlled provid
     delete context.env.ANTHROPIC_API_KEY; delete context.env.ANTHROPIC_MODEL; delete context.env.AI_MONTHLY_REQUEST_LIMIT;
   }
 });
-function user(id='alice'){context.headers=new Headers({'oai-authenticated-user-id':id,'oai-authenticated-user-email':id+'@example.test'});}
+const platformHost='roamly.pb116.chatgpt.site';
+function user(id='alice'){context.headers=new Headers({host:platformHost,'oai-authenticated-user-id':id,'oai-authenticated-user-email':id+'@example.test'});}
+
+test('ChatGPT identity headers are ignored off chatgpt.site, where clients could forge them',async()=>{
+  jar.clear();
+  for(const host of [undefined,'roamly.panshulbh16.workers.dev','chatgpt.site.evil.test','evilchatgpt.site']){
+    context.headers=new Headers({...(host?{host}:{}),'oai-authenticated-user-id':'victim','oai-authenticated-user-email':'victim@example.test'});
+    assert.equal(await app.identity.currentUser(),null,host);
+    assert.equal((await app.history.GET(req('/api/history',undefined,'GET'))).status,401);
+    assert.equal((await app.platform.GET(req('/auth/platform?returnTo=%2Fhistory',undefined,'GET'))).status,404);
+  }
+  user('victim');assert.equal((await app.identity.currentUser()).id,'victim');
+  context.headers=new Headers();
+});
 function req(path,data,method='POST'){return new Request(origin+path,{method,headers:{origin,'Content-Type':'application/json'},...(data===undefined?{}:{body:JSON.stringify(data)})})}
 test('guests cannot read history and unavailable planning does not create history',async()=>{context.headers=new Headers();assert.equal((await app.history.GET(req('/api/history',undefined,'GET'))).status,401);assert.equal((await app.generate.POST(req('/api/generate',input))).status,503);assert.equal(sql.prepare('SELECT count(*) AS n FROM search_history').get().n,0)});
 test('guest JSON and streamed generation work without history and respect daily limits',async()=>{
@@ -334,7 +347,7 @@ const fakeSession={access_token:fakeAccess,refresh_token:'fixture-refresh-not-a-
 const realFetch=globalThis.fetch;let calls=[];
 function enableMockProvider(){context.env.SUPABASE_URL='https://fixture.supabase.co';context.env.SUPABASE_PUBLISHABLE_KEY='fixture-public-key';context.env.SUPABASE_AUTH_ENABLED='true';globalThis.fetch=async(input,init)=>{const u=new URL(typeof input==='string'?input:input.url);assert.equal(u.origin,'https://fixture.supabase.co');calls.push(u.pathname);const data=init?.body?JSON.parse(init.body):{};if(u.pathname.endsWith('/otp'))return Response.json({});if(u.pathname.endsWith('/verify'))return data.token==='123456'?Response.json(fakeSession):Response.json({msg:'Token has expired or is invalid',code:'otp_expired'},{status:403});if(u.pathname.endsWith('/user'))return Response.json(mockUser);if(u.pathname.endsWith('/token')){assert.ok(data.code_verifier);return Response.json(fakeSession)}if(u.pathname.endsWith('/logout'))return new Response(null,{status:204});throw Error('Unexpected provider endpoint');};}
 test('null JSON bodies are rejected before auth provider calls',async()=>{jar.clear();enableMockProvider();user();assert.equal((await app.email.POST(req('/api/auth/email',null))).status,400);assert.equal((await app.google.POST(req('/api/auth/google',null))).status,400);assert.equal(calls.includes('/auth/v1/otp'),false);assert.equal(calls.includes('/auth/v1/authorize'),false);globalThis.fetch=realFetch;context.env.SUPABASE_AUTH_ENABLED='false';delete context.env.SUPABASE_URL;delete context.env.SUPABASE_PUBLISHABLE_KEY;jar.clear()});
-test('platform handoff only clears external cookies on same-origin POST',async()=>{jar.clear();jar.set('sb-test',{value:'session',options:{}});const get=await app.platform.GET(req('/auth/platform?returnTo=%2Fhistory',undefined,'GET'));assert.equal(get.status,303);assert.ok(jar.has('sb-test'));const hostile=new Request(origin+'/auth/platform?returnTo=%2Fhistory',{method:'POST',headers:{origin:'https://evil.test'}});assert.equal((await app.platform.POST(hostile)).status,403);assert.ok(jar.has('sb-test'));const post=await app.platform.POST(req('/auth/platform?returnTo=%2Fhistory',undefined,'POST'));assert.equal(post.status,303);assert.equal(jar.has('sb-test'),false);jar.clear()});
+test('platform handoff only clears external cookies on same-origin POST',async()=>{jar.clear();context.headers=new Headers({host:platformHost});jar.set('sb-test',{value:'session',options:{}});const get=await app.platform.GET(req('/auth/platform?returnTo=%2Fhistory',undefined,'GET'));assert.equal(get.status,303);assert.ok(jar.has('sb-test'));const hostile=new Request(origin+'/auth/platform?returnTo=%2Fhistory',{method:'POST',headers:{origin:'https://evil.test'}});assert.equal((await app.platform.POST(hostile)).status,403);assert.ok(jar.has('sb-test'));const post=await app.platform.POST(req('/auth/platform?returnTo=%2Fhistory',undefined,'POST'));assert.equal(post.status,303);assert.equal(jar.has('sb-test'),false);jar.clear()});
 test('email OTP uses the real SDK and establishes a server-verified HttpOnly session with a mocked provider',async()=>{jar.clear();enableMockProvider();const sent=await app.email.POST(req('/api/auth/email',{email:mockUser.email}));assert.equal(sent.status,200);const bad=await app.verify.POST(req('/api/auth/verify',{email:mockUser.email,token:'000000'}));assert.equal(bad.status,400);assert.ok(!jar.get('roamly-auth-provider'));const good=await app.verify.POST(req('/api/auth/verify',{email:mockUser.email,token:'123456',returnTo:'/history'}));assert.equal(good.status,200);assert.equal((await good.json()).redirectTo,'/history');assert.equal((await app.identity.currentUser()).id,'supabase:'+mockUser.id);assert.ok(Array.from(jar).filter(([k])=>k.startsWith('sb-')).every(([,v])=>v.options.httpOnly===true));assert.ok(calls.includes('/auth/v1/verify'));assert.ok(calls.includes('/auth/v1/user'));});
 test('Google start stores PKCE and callback exchanges its code with the mocked provider',async()=>{jar.clear();const start=await app.google.POST(req('/api/auth/google',{returnTo:'/history'}));assert.equal(start.status,200);const {url}=await start.json();const u=new URL(url);assert.equal(u.origin,'https://fixture.supabase.co');assert.equal(u.searchParams.get('provider'),'google');assert.equal(u.searchParams.get('code_challenge_method'),'s256');assert.ok(u.searchParams.get('code_challenge'));assert.ok(Array.from(jar.keys()).some(k=>k.includes('code-verifier')));const callback=await app.callback.GET(req('/auth/callback?code=fixture-code',undefined,'GET'));assert.equal(callback.status,303);assert.equal(callback.headers.get('Location'),origin+'/history');assert.equal((await app.identity.currentUser()).id,'supabase:'+mockUser.id);});
 test('expired external identity cannot silently fall back to another platform account',async()=>{jar.clear();jar.set('roamly-auth-provider',{value:'supabase',options:{}});user();assert.equal(await app.identity.currentUser(),null);});
@@ -375,37 +388,52 @@ test('single-day regeneration keeps original needs and date, rejects invalid day
   }finally{globalThis.fetch=original;for(const key of ['ANTHROPIC_API_KEY','ANTHROPIC_MODEL','AI_MONTHLY_REQUEST_LIMIT'])delete context.env[key];}
 });
 
-test('Razorpay checkout verifies price, reuses subscriptions, verifies signed webhooks and enforces paid limits',async()=>{
+test('Razorpay Plus pass: currency by country, verified callback and webhook, idempotent grant, paid limits',async()=>{
   jar.clear();user('subscriber');const original=globalThis.fetch;
-  const settings={RAZORPAY_ENABLED:'true',RAZORPAY_KEY_ID:'fixture',RAZORPAY_KEY_SECRET:'fixture',RAZORPAY_PLAN_ID:'plan_fixture',RAZORPAY_WEBHOOK_SECRET:'webhook-fixture',ANTHROPIC_API_KEY:'fixture',ANTHROPIC_MODEL:'fixture',AI_MONTHLY_REQUEST_LIMIT:'10000'};
+  const settings={RAZORPAY_ENABLED:'true',RAZORPAY_KEY_ID:'fixture',RAZORPAY_KEY_SECRET:'fixture-secret',RAZORPAY_WEBHOOK_SECRET:'webhook-fixture',RAZORPAY_INTERNATIONAL:'true',ANTHROPIC_API_KEY:'fixture',ANTHROPIC_MODEL:'fixture',AI_MONTHLY_REQUEST_LIMIT:'10000'};
   Object.assign(context.env,settings);
-  let amount=49900,creates=0,cancels=0;
-  let sub={id:'sub_fixture',plan_id:'plan_fixture',status:'created',paid_count:0,current_end:null,quantity:1,short_url:'https://rzp.io/test'};
+  const created=[];let n=0;
   globalThis.fetch=async(url,options)=>{
-    const path=new URL(url).pathname;
-    if(path==='/v1/plans/plan_fixture')return Response.json({id:'plan_fixture',period:'monthly',interval:1,item:{amount,currency:'INR'}});
-    if(path==='/v1/subscriptions'){creates++;return Response.json(sub);}
-    if(path==='/v1/subscriptions/sub_fixture/cancel'){cancels++;assert.equal(JSON.parse(options.body).cancel_at_cycle_end,true);return Response.json(sub);}
-    if(path==='/v1/subscriptions/sub_fixture')return Response.json(sub);
-    throw Error('Unexpected billing path');
+    if(new URL(url).pathname!=='/v1/orders')throw Error('Unexpected billing path');
+    const body=JSON.parse(options.body);created.push(body);return Response.json({id:'order_fixture'+(++n),amount:body.amount,currency:body.currency});
   };
+  const sign=async(secret,text)=>{const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);return Buffer.from(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(text))).toString('hex');};
+  const withCountry=(country)=>{const r=req('/api/billing/checkout',{});r.headers.set('cf-ipcountry',country);return r;};
+  const now=()=>Math.floor(Date.now()/1000);
   try{
-    amount=50000;assert.equal((await app.checkout.POST(req('/api/billing/checkout',{}))).status,503);assert.equal(creates,0);
-    amount=49900;
-    assert.equal((await app.checkout.POST(req('/api/billing/checkout',{}))).status,200);
-    assert.equal((await app.checkout.POST(req('/api/billing/checkout',{}))).status,200);assert.equal(creates,1);
+    assert.equal(app.billing.billingCurrency('US'),'USD');assert.equal(app.billing.billingCurrency('IN'),'INR');assert.equal(app.billing.billingCurrency(null),'INR');assert.equal(app.billing.billingCurrency('XX'),'INR');
+    const inr=await (await app.checkout.POST(withCountry('IN'))).json();
+    assert.deepEqual([inr.amount,inr.currency,inr.keyId],[49900,'INR','fixture']);assert.equal(created[0].notes.roamly_owner,'subscriber');
+    const usd=await (await app.checkout.POST(withCountry('US'))).json();
+    assert.deepEqual([usd.amount,usd.currency],[1000,'USD']);
+    context.env.RAZORPAY_INTERNATIONAL='false';
+    assert.equal((await (await app.checkout.POST(withCountry('US'))).json()).currency,'INR');
+    context.env.RAZORPAY_INTERNATIONAL='true';
     assert.equal(app.billing.hasPlus(await app.billing.membership('subscriber')),false);
-    const event=JSON.stringify({payload:{subscription:{entity:{id:'sub_fixture',status:'active'}}}});
+    // Forged callback is rejected and grants nothing.
+    assert.equal((await app.confirm.POST(req('/api/billing/confirm',{orderId:inr.orderId,paymentId:'pay_1',signature:'0'.repeat(64)}))).status,400);
+    assert.equal(app.billing.hasPlus(await app.billing.membership('subscriber')),false);
+    // Another signed-in user confirming grants to the order's owner, not the caller.
+    user('someone-else');
+    const good={orderId:inr.orderId,paymentId:'pay_1',signature:await sign(settings.RAZORPAY_KEY_SECRET,inr.orderId+'|pay_1')};
+    assert.equal((await app.confirm.POST(req('/api/billing/confirm',good))).status,200);
+    assert.equal(app.billing.hasPlus(await app.billing.membership('someone-else')),false);
+    user('subscriber');
+    const first=await app.billing.membership('subscriber');
+    assert.equal(app.billing.hasPlus(first),true);assert.ok(Math.abs(first.current_end-(now()+30*86400))<5);
+    // Replayed callback and webhook for the same order do not extend the pass.
+    const event=JSON.stringify({event:'order.paid',payload:{order:{entity:{id:inr.orderId}},payment:{entity:{id:'pay_1'}}}});
     const bad=new Request(origin+'/api/billing/webhook',{method:'POST',headers:{'x-razorpay-signature':'0'.repeat(64)},body:event});
     assert.equal((await app.webhook.POST(bad)).status,401);
-    sub={...sub,status:'active',paid_count:1,current_end:Math.floor(Date.now()/1000)+3600};
-    const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(settings.RAZORPAY_WEBHOOK_SECRET),{name:'HMAC',hash:'SHA-256'},false,['sign']);
-    const signature=Buffer.from(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(event))).toString('hex');
-    const webhook=()=>new Request(origin+'/api/billing/webhook',{method:'POST',headers:{'x-razorpay-signature':signature},body:event});
-    assert.equal((await app.webhook.POST(webhook())).status,200);assert.equal((await app.webhook.POST(webhook())).status,200);
-    assert.equal(app.billing.hasPlus(await app.billing.membership('subscriber')),true);
-    const fresh=await (await app.billingStatus.GET()).json();
-    assert.equal(fresh.usage.limit,20);assert.equal(fresh.usage.remaining,20);
+    const hook=async body=>new Request(origin+'/api/billing/webhook',{method:'POST',headers:{'x-razorpay-signature':await sign(settings.RAZORPAY_WEBHOOK_SECRET,body)},body});
+    assert.equal((await app.webhook.POST(await hook(event))).status,200);
+    assert.equal((await app.confirm.POST(req('/api/billing/confirm',good))).status,200);
+    assert.equal((await app.billing.membership('subscriber')).current_end,first.current_end);
+    // A second pass (via webhook only, tab closed) stacks on top of the first.
+    assert.equal((await app.webhook.POST(await hook(JSON.stringify({event:'order.paid',payload:{order:{entity:{id:usd.orderId}},payment:{entity:{id:'pay_2'}}}})))).status,200);
+    const second=await app.billing.membership('subscriber');
+    assert.equal(second.current_end,first.current_end+30*86400);assert.equal(second.paid_count,2);
+    const status=await (await app.billingStatus.GET()).json();assert.equal(status.plus,true);assert.equal(status.until,second.current_end);
     for(let i=0;i<20;i++)await app.planner.reserveUsage('subscriber');
     const exhausted=await (await app.billingStatus.GET()).json();
     assert.equal(exhausted.usage.remaining,0);assert.equal(exhausted.usage.used,20);
@@ -415,11 +443,9 @@ test('Razorpay checkout verifies price, reuses subscriptions, verifies signed we
     await assert.rejects(()=>app.planner.reserveUsage('subscriber'),e=>e.status===429);
     for(let i=0;i<5;i++)await app.planner.reserveUsage('free-subscriber');
     await assert.rejects(()=>app.planner.reserveUsage('free-subscriber'),e=>e.status===429);
-    user('other-subscriber');assert.equal((await app.cancelSubscription.POST(req('/api/billing/cancel',{}))).status,404);assert.equal(cancels,0);
-    user('subscriber');assert.equal((await app.cancelSubscription.POST(req('/api/billing/cancel',{}))).status,200);assert.equal(cancels,1);
-    sub={...sub,status:'cancelled'};await app.webhook.POST(webhook());assert.equal(app.billing.hasPlus(await app.billing.membership('subscriber')),false);
-    sub={...sub,status:'active',paid_count:0};await app.webhook.POST(webhook());assert.equal(app.billing.hasPlus(await app.billing.membership('subscriber')),false);
-    assert.throws(()=>app.billing.checkoutUrl('https://evil.example/pay'));
+    sql.prepare("UPDATE subscriptions SET current_end=? WHERE owner='subscriber'").run(now()-1);
+    assert.equal(app.billing.hasPlus(await app.billing.membership('subscriber')),false);
+    delete context.env.RAZORPAY_ENABLED;assert.equal((await app.checkout.POST(withCountry('IN'))).status,503);
   }finally{globalThis.fetch=original;for(const key of Object.keys(settings))delete context.env[key];}
 });
 
@@ -434,14 +460,13 @@ test('Travel Together: Plus hosting, private drafts, requests, capacity and life
     guest();assert.equal((await post('save',{trip})).status,401);
     user('together-host');assert.equal((await post('save',{trip})).status,403);plus();
     const foreign=req('/api/together',{action:'save',id,trip});foreign.headers.set('origin','https://foreign.test');assert.equal((await app.together.POST(foreign)).status,403);
-    for(const patch of [{capacity:0},{capacity:21},{days:[]},{startDate:'2026-02-30'},{startDate:'2020-01-01'},{cost:-1},{title:'  '},{meeting:'x'.repeat(2001)}])assert.equal((await post('save',{trip:{...trip,...patch}})).status,400);
+    for(const patch of [{capacity:0},{capacity:21},{days:Array(11).fill('x')},{startDate:'2026-02-30'},{startDate:'2020-01-01'},{cost:-1},{title:'  '},{city:''},{hostName:''},{meeting:'x'.repeat(2001)}])assert.equal((await post('save',{trip:{...trip,...patch}})).status,400);
     assert.equal((await post('save',{trip})).status,200);
     assert.equal((await post('save',{trip})).status,200,'retry saves same draft');
     guest();assert.equal((await get()).status,404);
     user('together-stranger');assert.equal((await post('publish')).status,404);
     user('together-host');assert.equal((await post('close')).status,409,'cannot make unpublished draft public by closing it');
     assert.equal((await post('publish')).status,200);
-    assert.equal((await post('save',{trip:{...trip,title:'Bait and switch'}})).status,409);
     assert.equal((await post('join',{name:'Host',message:'Joining my own trip'})).status,400);
     guest();let publicView=await (await get()).json();assert.equal(publicView.trip.meeting,undefined);assert.equal(publicView.trip.owner,undefined);assert.deepEqual(publicView.requests,[]);
     const list=await (await app.together.GET(req('/api/together?city=bareilly&destination=nain&date='+date,undefined,'GET'))).json();assert.ok(list.trips.some(t=>t.id===id));assert.ok(!JSON.stringify(list).includes('PRIVATE'));
@@ -453,6 +478,13 @@ test('Travel Together: Plus hosting, private drafts, requests, capacity and life
     user('together-host');let detail=await (await get()).json();assert.equal(detail.requests.length,2);
     const approvals=await Promise.all([post('approve',{member:'together-one'}),post('approve',{member:'together-two'})]);assert.deepEqual(approvals.map(r=>r.status).sort(),[200,409]);
     const approved=sql.prepare("SELECT member FROM outing_requests WHERE trip_id=? AND status='approved'").get(id).member;
+    // Published trips are editable; everyone who requested or joined is told, and places can't drop below approvals.
+    sql.prepare("INSERT INTO subscriptions (owner,status,current_end,paid_count) VALUES ('together-stranger','active',?,1)").run(Math.floor(Date.now()/1000)+86400);
+    user('together-stranger');assert.equal((await post('save',{trip:{...trip,title:'Hijacked'}})).status,409,'a Plus member cannot edit someone else’s trip');
+    user('together-host');assert.equal((await post('save',{trip:{...trip,title:'Nainital, slower',days:['Lake walk','']}})).status,200);
+    assert.equal(sql.prepare("SELECT count(*) n FROM notifications WHERE trip_id=? AND type='trip_updated'").get(id).n,2);
+    assert.equal(sql.prepare("SELECT status FROM outings WHERE id=?").get(id).status,'open','editing keeps it published');
+    guest();assert.deepEqual((await (await get()).json()).trip.days,['Lake walk'],'empty days are dropped');
     user(approved);detail=await (await get()).json();assert.equal(detail.trip.meeting,trip.meeting);assert.deepEqual(detail.requests,[]);
     assert.equal((await post('report',{reason:'A concern that should stay private'})).status,200);assert.equal(sql.prepare('SELECT count(*) n FROM outing_reports WHERE trip_id=?').get(id).n,1);
     user('together-host');sql.prepare("UPDATE subscriptions SET current_end=0 WHERE owner='together-host'").run();
@@ -462,9 +494,71 @@ test('Travel Together: Plus hosting, private drafts, requests, capacity and life
     user('together-host');assert.equal((await post('close')).status,200);assert.equal((await post('publish')).status,403,'expired host cannot republish');
     const other=approved==='together-one'?'together-two':'together-one';assert.equal((await post('approve',{member:other})).status,409);
     assert.equal((await post('cancel')).status,200);assert.equal((await (await get()).json()).trip.status,'cancelled');
+    user('together-host');sql.prepare("UPDATE subscriptions SET current_end=? WHERE owner='together-host'").run(Math.floor(Date.now()/1000)+86400);assert.equal((await post('save',{trip})).status,409,'cancelled trips cannot be edited');
     user(other);assert.equal((await post('withdraw')).status,200);assert.equal((await (await get()).json()).trip.requestStatus,'withdrawn');
   } finally {
-    sql.prepare('DELETE FROM outing_reports WHERE trip_id=?').run(id);sql.prepare('DELETE FROM outing_requests WHERE trip_id=?').run(id);sql.prepare('DELETE FROM outings WHERE id=?').run(id);sql.prepare("DELETE FROM subscriptions WHERE owner='together-host'").run();guest();
+    sql.prepare('DELETE FROM outing_reports WHERE trip_id=?').run(id);sql.prepare('DELETE FROM outing_requests WHERE trip_id=?').run(id);sql.prepare('DELETE FROM outings WHERE id=?').run(id);sql.prepare("DELETE FROM subscriptions WHERE owner IN ('together-host','together-stranger')").run();sql.prepare('DELETE FROM notifications WHERE trip_id=?').run(id);guest();
+  }
+});
+
+test('Together: publish straight from the editor with only the basics',async()=>{
+  const id=crypto.randomUUID(), date=new Date(Date.now()+86400000).toISOString().slice(0,10);
+  const basics={id,title:'Weekend in the hills',hostName:'Ana',city:'Delhi',destination:'Mussoorie',startDate:date,capacity:3,summary:'',cost:0,days:[''],meeting:''};
+  sql.prepare("INSERT INTO subscriptions (owner,status,current_end,paid_count) VALUES ('quick-host','active',?,1)").run(Math.floor(Date.now()/1000)+86400);
+  try {
+    user('quick-host');
+    assert.equal((await app.together.POST(req('/api/together',{action:'save',id,trip:basics,publish:true}))).status,200);
+    context.headers=new Headers();const view=await (await app.together.GET(req('/api/together?id='+id,undefined,'GET'))).json();
+    assert.equal(view.trip.status,'open');assert.deepEqual(view.trip.days,[]);assert.equal(view.trip.summary,'');
+  } finally {sql.prepare('DELETE FROM outings WHERE id=?').run(id);sql.prepare("DELETE FROM subscriptions WHERE owner='quick-host'").run();context.headers=new Headers();}
+});
+
+test('Together email invites: host-only, hold places, sign the guest in once and add them to the trip',async()=>{
+  const id=crypto.randomUUID(), date=new Date(Date.now()+86400000).toISOString().slice(0,10), original=globalThis.fetch;
+  const trip={id,title:'Lake weekend <b>',hostName:'Ana',city:'Delhi',destination:'Nainital',startDate:date,capacity:2,summary:'',cost:0,days:[],meeting:'Meet at gate 2'};
+  const post=(action,extra={})=>app.together.POST(req('/api/together',{action,id,...extra}));
+  const accept=token=>app.inviteAccept.POST(req('/api/together/invite',{token}));
+  const settings={RESEND_API_KEY:'re_test',EMAIL_FROM:'Roamly <roamly@example.test>',SUPABASE_SERVICE_ROLE_KEY:'service',SUPABASE_URL:'https://sb.test/',SUPABASE_PUBLISHABLE_KEY:'sb_publishable_test',SUPABASE_AUTH_ENABLED:'true'};
+  const mails=[], guests={};
+  globalThis.fetch=async(url,options={})=>{
+    const u=new URL(url), body=options.body?JSON.parse(options.body):{};
+    if(u.host==='api.resend.com'){mails.push(body);return Response.json({id:'email_'+mails.length});}
+    if(u.pathname==='/auth/v1/admin/generate_link'){guests[body.email]??=crypto.randomUUID();return Response.json({id:guests[body.email],email:body.email,aud:'authenticated',action_link:'x',email_otp:'123456',hashed_token:'hash:'+body.email,redirect_to:'',verification_type:'magiclink'});}
+    if(u.pathname==='/auth/v1/verify'){const email=body.token_hash.slice(5);return Response.json({access_token:'at',token_type:'bearer',expires_in:3600,expires_at:Math.floor(Date.now()/1000)+3600,refresh_token:'rt',user:{id:guests[email],email,aud:'authenticated',app_metadata:{},user_metadata:{},created_at:new Date().toISOString()}});}
+    throw Error('Unexpected request '+url);
+  };
+  const tokenFor=email=>mails.findLast(m=>m.to===email).text.match(/\?t=([A-Za-z0-9_-]+)/)[1];
+  sql.prepare("INSERT INTO subscriptions (owner,status,current_end,paid_count) VALUES ('invite-host','active',?,1)").run(Math.floor(Date.now()/1000)+86400);
+  try{
+    jar.clear();user('invite-host');assert.equal((await post('save',{trip,publish:true})).status,200);
+    assert.equal((await post('invite',{emails:['a@x.test']})).status,503,'needs email + Supabase admin configured');
+    Object.assign(context.env,settings);
+    user('invite-stranger');assert.equal((await post('invite',{emails:['a@x.test']})).status,403);
+    user('invite-host');
+    assert.equal((await post('invite',{emails:['not-an-email']})).status,400);
+    assert.equal((await post('invite',{emails:['a@x.test','b@x.test','c@x.test']})).status,409,'three invites cannot fit two places');
+    const sent=await post('invite',{emails:['A@x.test','b@x.test']});assert.equal(sent.status,200);assert.equal((await sent.json()).sent,2);
+    assert.deepEqual(mails.map(m=>m.to),['a@x.test','b@x.test']);assert.equal(mails[0].from,settings.EMAIL_FROM);
+    assert.ok(mails[0].html.includes('Lake weekend &lt;b&gt;'),'trip text is escaped in the email');
+    assert.equal((await post('invite',{emails:['c@x.test']})).status,409,'unaccepted invites hold their places');
+    assert.equal(sql.prepare('SELECT count(*) n FROM outing_invites WHERE trip_id=? AND token_hash LIKE ?').get(id,'%'+tokenFor('a@x.test')+'%').n,0,'only a hash of the token is stored');
+    let detail=await (await app.together.GET(req('/api/together?id='+id,undefined,'GET'))).json();assert.deepEqual(detail.invites.map(i=>i.status),['sent','sent']);
+    context.headers=new Headers();jar.clear();
+    assert.equal((await accept('x'.repeat(43))).status,409,'unknown token');
+    const joined=await accept(tokenFor('a@x.test'));assert.equal(joined.status,200);assert.equal((await joined.json()).redirectTo,'/together?trip='+id);
+    const member='supabase:'+guests['a@x.test'];
+    assert.equal(sql.prepare('SELECT status FROM outing_requests WHERE trip_id=? AND member=?').get(id,member).status,'approved');
+    assert.ok([...jar.keys()].some(k=>k.startsWith('sb-')),'the guest is signed in');assert.equal(jar.get('roamly-auth-provider').value,'supabase');
+    assert.equal(sql.prepare("SELECT count(*) n FROM notifications WHERE recipient='invite-host' AND trip_id=? AND type='invite_accepted'").get(id).n,1);
+    assert.equal((await accept(tokenFor('a@x.test'))).status,409,'each link works once');
+    sql.prepare("UPDATE outing_invites SET expires_at=1 WHERE trip_id=? AND email='b@x.test'").run(id);
+    assert.equal((await accept(tokenFor('b@x.test'))).status,409,'expired links are refused');
+    jar.clear();user('invite-host');mails.length=0;assert.equal((await (await post('invite',{emails:['a@x.test','b@x.test']})).json()).sent,1,'joined guests are not re-invited; expired ones get a fresh link');
+    context.headers=new Headers();jar.clear();assert.equal((await accept(tokenFor('b@x.test'))).status,200,'resent link works');
+  } finally {
+    globalThis.fetch=original;for(const k of Object.keys(settings))delete context.env[k];jar.clear();context.headers=new Headers();
+    for(const t of ['notifications','outing_invites','outing_requests'])sql.prepare(`DELETE FROM ${t} WHERE trip_id=?`).run(id);
+    sql.prepare('DELETE FROM outings WHERE id=?').run(id);sql.prepare("DELETE FROM subscriptions WHERE owner='invite-host'").run();
   }
 });
 

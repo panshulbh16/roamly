@@ -1,4 +1,10 @@
 import { env } from "cloudflare:workers";
+import { headers } from "next/headers";
+// ponytail: ChatGPT identity headers are only set (and stripped from clients) by the chatgpt.site proxy.
+// Anywhere else, e.g. workers.dev, a client could forge them, so they must be ignored.
+export async function platformAuth() {
+  return ((await headers()).get("host") ?? "").toLowerCase().endsWith(".chatgpt.site");
+}
 export function authConfig() {
   const url = typeof env.SUPABASE_URL === "string" ? env.SUPABASE_URL : "";
   const key =

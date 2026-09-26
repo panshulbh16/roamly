@@ -1,5 +1,5 @@
 import { currentUser } from "@/lib/auth/server";
-import { authConfig } from "@/lib/auth/config";
+import { authConfig, platformAuth } from "@/lib/auth/config";
 import { AppShell } from "@/components/trips/app-shell";
 import { HistoryView } from "@/components/trips/history";
 import { SignIn } from "@/components/auth/sign-in";
@@ -14,6 +14,7 @@ export default async function Page() {
         <SignIn
           user={null}
           enabled={authConfig().enabled}
+        platform={await platformAuth()}
           returnTo="/history"
           callbackError={false}
         />
