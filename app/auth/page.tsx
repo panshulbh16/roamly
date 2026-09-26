@@ -1,5 +1,5 @@
 import { currentUser } from "@/lib/auth/server";
-import { authConfig } from "@/lib/auth/config";
+import { authConfig, platformAuth } from "@/lib/auth/config";
 import { safeReturnTo } from "@/lib/auth/policy";
 import { AppShell } from "@/components/trips/app-shell";
 import { SignIn } from "@/components/auth/sign-in";
@@ -15,6 +15,7 @@ export default async function Page({
       <SignIn
         user={user}
         enabled={authConfig().enabled}
+        platform={await platformAuth()}
         returnTo={safeReturnTo(query.returnTo)}
         callbackError={query.error === "callback"}
       />

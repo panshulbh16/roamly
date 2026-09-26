@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { authConfig, authCookieOptions } from "./config";
+import { authConfig, authCookieOptions, platformAuth } from "./config";
 import { authPath } from "./policy";
 export type AppUser = {
   id: string;
@@ -47,6 +47,7 @@ export async function currentUser(): Promise<AppUser | null> {
   }
   if (jar.get("roamly-auth-provider")?.value === "supabase") return null;
   if (jar.get("roamly-signed-out")?.value === "1") return null;
+  if (!(await platformAuth())) return null;
   const h = await headers();
   const id = h.get("oai-authenticated-user-id");
   const email = h.get("oai-authenticated-user-email");
