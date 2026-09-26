@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { BillingControls } from "./billing";
 import { TripFooter } from "./footer";
-export function Pricing({ signedIn, billingEnabled = false }: { signedIn: boolean; billingEnabled?: boolean }) {
+export function Pricing({ signedIn, billingEnabled = false, price = "₹499" }: { signedIn: boolean; billingEnabled?: boolean; price?: string }) {
   const [busy, setBusy] = useState(false);
   const [joined, setJoined] = useState(false);
   return <main className="workspace">
@@ -16,7 +16,7 @@ export function Pricing({ signedIn, billingEnabled = false }: { signedIn: boolea
             <div>
               <h1>More room to roam.</h1>
               <p className="subtext">
-                {billingEnabled ? "Choose the free planner or get more daily AI plans with Plus." : "Roamly Plus is not available yet. Join the waitlist for the ₹499/month plan; the free planner is available now."}
+                {billingEnabled ? "Choose the free planner or get more daily AI plans with Plus." : `Roamly Plus is not available yet. Join the waitlist for the ${price}/month plan; the free planner is available now.`}
               </p>
             </div>
           </div>
@@ -54,12 +54,12 @@ export function Pricing({ signedIn, billingEnabled = false }: { signedIn: boolea
                 For your next big adventure
               </h2>
               <div className="price" style={{ fontSize: 28 }}>
-                ₹499 / month
+                {price} / month
               </div>
               <p className="subtext">
                 20 AI plans per day. Host city-based trips with Travel Together, publish your own itinerary and approve travellers. Replace individual days, edit your itinerary, share snapshots and export a PDF. {billingEnabled ? "Payments and renewals are handled by Razorpay." : "Checkout is not open yet. No payment is collected."}
               </p>
-              {billingEnabled ? (signedIn ? <BillingControls /> : <Link href="/auth?returnTo=%2Fpricing" className="primary">Sign in for Plus</Link>) : !signedIn ? <Link href="/auth?returnTo=%2Fpricing" className="primary" style={{ marginTop: 28, width: "100%" }}>Sign in to join the Plus waitlist<ArrowRight size={15} /></Link> : <button
+              {billingEnabled ? (signedIn ? <BillingControls price={price} /> : <Link href="/auth?returnTo=%2Fpricing" className="primary">Sign in for Plus</Link>) : !signedIn ? <Link href="/auth?returnTo=%2Fpricing" className="primary" style={{ marginTop: 28, width: "100%" }}>Sign in to join the Plus waitlist<ArrowRight size={15} /></Link> : <button
                 disabled={busy || joined}
                 className="primary"
                 style={{ marginTop: 28, width: "100%" }}

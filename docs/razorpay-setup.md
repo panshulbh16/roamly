@@ -18,6 +18,10 @@ Configure `https://roamly-trip-planner.pb116.chatgpt.site/api/billing/webhook` f
 
 The subscription uses Razorpay's hosted checkout link and up to 120 monthly billing cycles. After payment, return to Pricing and choose **Refresh membership after payment**. Active, paid, unexpired subscriptions receive the higher allowance. Cancellation schedules active subscriptions to end after the current paid period.
 
+## International ($10/month)
+
+Visitors whose Cloudflare country is known and not India are charged a separate USD plan; everyone else (including unknown country) pays ₹499. To enable: get International Payments approved in the Razorpay dashboard, create a monthly USD plan with interval 1 and amount 1000 cents, then set `RAZORPAY_PLAN_ID_USD` and `RAZORPAY_INTERNATIONAL=true`. Without both, everyone is billed in INR. Checkout verifies the USD plan's currency, amount and interval the same way as the INR plan.
+
 ## Test before enabling live checkout
 
 Use test keys and a test plan in a separate test deployment. Verify guest rejection; ₹499 plan validation; payment success/failure; duplicate checkout; duplicate and out-of-order webhooks; 20-versus-5 daily limits; failed renewal; expiry; and account-isolated cancellation. Then configure live keys, the live plan and live webhook secret. Finalise customer-facing billing, support and refund information for your business before accepting charges.

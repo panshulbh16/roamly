@@ -62,6 +62,13 @@ test('Plus is clearly a waitlist and guests get a sign-in route back to pricing'
   assert.match(member, /No payment is collected/);
 });
 
+test('Plus shows the visitor currency price',()=>{
+ assert.match(render(Pricing,{signedIn:false}),/₹499 \/ month/);
+ const usd=render(Pricing,{signedIn:true,billingEnabled:true,price:'$10'});
+ assert.match(usd,/\$10 \/ month/);
+ assert.doesNotMatch(usd,/₹499/);
+});
+
 test('signed-in shell offers Notifications while guests have no private inbox',()=>{
  const signed=render(AppShell,{user:{id:'x',email:'x@test.example',displayName:'Ada'}});
  assert.match(signed,/aria-label="Notifications"/);
