@@ -22,7 +22,7 @@ export function PlusProvider({ signedIn, children }: { signedIn: boolean; childr
   const [status, setStatus] = useState<PlusStatus | null>(signedIn ? cached : null);
   const [celebrate, setCelebrate] = useState(false);
   useEffect(() => {
-    if (!signedIn) { cached = null; setStatus(null); return; }
+    if (!signedIn) { cached = null; return; }
     let active = true;
     if (!cached) fetch("/api/billing/status").then(r => r.ok ? r.json() : null).then(s => {
       if (active && s) { cached = { plus: !!s.plus, until: s.until ?? 0 }; setStatus(cached); }
@@ -31,7 +31,7 @@ export function PlusProvider({ signedIn, children }: { signedIn: boolean; childr
     window.addEventListener(EVENT, onPlus);
     return () => { active = false; window.removeEventListener(EVENT, onPlus); };
   }, [signedIn]);
-  return <PlusContext.Provider value={status}>
+  return <PlusContext.Provider value={signedIn ? status : null}>
     {children}
     <PlusCelebration open={celebrate} until={status?.until ?? 0} onClose={() => setCelebrate(false)} />
   </PlusContext.Provider>;

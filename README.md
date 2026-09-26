@@ -2,7 +2,7 @@
 
 **An AI travel planner that turns a rough idea into a structured, day-by-day itinerary.** Give it a destination, dates, pace and interests — Claude drafts a validated, streamed itinerary, and every trip is saved privately to its owner.
 
-> **Status:** early access · private deployment · no payments collected. Existing itineraries are unverified AI suggestions, not booked plans.
+> **Status:** early access · live at https://roamly.panshulbh16.workers.dev · Plus sold as a 30-day pass via Razorpay. Existing itineraries are unverified AI suggestions, not booked plans.
 
 ![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)
 ![D1](https://img.shields.io/badge/Cloudflare-D1-F38020?logo=cloudflare&logoColor=white)
@@ -45,10 +45,32 @@ The local Cloudflare runtime has a separate database; it does not copy hosted tr
 
 Use the checked-in npm lockfile. `npm run db:generate` generates migrations; inspect SQL before deployment. Never edit applied migrations. `npm run build` validates the production Worker build. `npx tsc --noEmit` validates TypeScript. Domain/security migration tests are in `tests/roamly.test.mjs`.
 
+## Deploying
+
+Production is the `roamly` Worker on Cloudflare (https://roamly.panshulbh16.workers.dev) with the `roamly-db` D1 database. `wrangler.jsonc` is the single source of the `DB` binding and its `migrations_dir: "drizzle"`.
+
+**Deploys are automatic.** `.github/workflows/ci.yml` runs on every pull request and every push to `main`:
+
+1. **Test** on Ubuntu and macOS: `tsc --noEmit`, `npm run lint`, `npm test` (includes the production build) and `tests/storage_test.py`.
+2. **Deploy**, only on `main` and only after every test passes, one deploy at a time:
+   - `wrangler d1 migrations apply roamly-db --remote`, which applies only new `drizzle/` files (tracked in `d1_migrations`)
+   - `npm run build`, then `wrangler deploy --keep-vars --var GIT_SHA:<commit>`
+   - `scripts/verify-deploy.sh` fails the run unless the site serves that commit (`X-Roamly-Version` header) with key pages returning 200 and `private, no-store`
+
+So merging to `main` is the release. Pages are never cached (the Worker forces `private, no-store` on HTML), hashed `/assets/` are immutable and renamed each build, and the service worker caches nothing, so the new version shows on the next request. To check what's live: `curl -sI https://roamly.panshulbh16.workers.dev | grep -i x-roamly-version`.
+
+The workflow needs the `CLOUDFLARE_API_TOKEN` repository secret: a Cloudflare token from the **Edit Cloudflare Workers** template, which includes Workers Scripts and D1. To replace it, roll the token in Cloudflare and run `gh secret set CLOUDFLARE_API_TOKEN`, pasting at the hidden prompt. To redeploy without a code change, re-run the workflow on `main` from the Actions tab.
+
+New migrations: `npm run db:generate` (or `npx drizzle-kit generate --custom` for triggers), review the SQL, and commit. CI applies it before the new code goes live, so keep migrations additive.
+
+App configuration lives in Worker **secrets** (`npx wrangler secret put NAME --name roamly`, or `npx wrangler secret bulk` for several). Never add dashboard *Text* variables: a secret can't share a name with one, and Text values are readable in the dashboard. `--keep-vars` preserves secrets across deploys. Required: `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `AI_MONTHLY_REQUEST_LIMIT`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_AUTH_ENABLED`, the Razorpay settings in `docs/razorpay-setup.md`, and for email invites `RESEND_API_KEY`, `EMAIL_FROM` and `SUPABASE_SERVICE_ROLE_KEY`.
+
+ChatGPT identity headers (`oai-authenticated-user-*`) are trusted only when the host is `*.chatgpt.site`, where that proxy sets them. On workers.dev or a custom domain, sign-in is Supabase only.
+
 ## Commercial launch gates
 1. Configure and live-test provider credentials, latency, failure behavior and spend caps.
-2. Add a payment provider, verified webhook handling, idempotent purchase records, entitlement enforcement, refunds and tax handling. The Plus waitlist currently validates interest only; no checkout or fabricated purchase success is included.
-3. Confirm public sign-in and audience settings; this deployment is owner-only.
+2. Payments: Razorpay Orders checkout, signature-verified callback and `order.paid` webhook, idempotent `orders` records and Plus entitlement are implemented. Still needed: a live test purchase and refund, refund handling in-app, and tax handling.
+3. Confirm public sign-in and audience settings for the Worker deployment.
 4. Set business identity, support address, retention/export/deletion flow, privacy policy and terms for the actual operator.
 5. Integrate verified travel/booking data if claiming current prices, availability or affiliate revenue. Existing itineraries are unverified suggestions.
 6. Run real-browser/mobile/accessibility checks, load tests, live API integration tests, account-isolation tests, backups/restore, alerts, and operational review before paid launch.

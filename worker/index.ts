@@ -9,6 +9,8 @@ import handler from "vinext/server/app-router-entry";
 interface Env {
   ASSETS: Fetcher;
   DB: D1Database;
+  /** Commit SHA set by CI at deploy time (`wrangler deploy --var GIT_SHA:...`). */
+  GIT_SHA?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -70,6 +72,10 @@ const worker = {
     if ((url.pathname.startsWith("/api/") && !publicDestination) || url.pathname.startsWith("/share/"))
       secured.headers.set("Cache-Control", "private, no-store");
     if (url.pathname.startsWith("/share/")) secured.headers.set("Referrer-Policy", "no-referrer");
+    // Pages are never cached anywhere, so a deploy is visible on the next request. Hashed /assets/ stay immutable.
+    if (secured.headers.get("Content-Type")?.startsWith("text/html")) secured.headers.set("Cache-Control", "private, no-store");
+    // Lets CI (and anyone) confirm which commit is live.
+    if (env.GIT_SHA) secured.headers.set("X-Roamly-Version", env.GIT_SHA);
     return secured;
   },
 };
