@@ -35,4 +35,4 @@ jobs:
           UNION ALL SELECT 'outing_requests.name',count(*),coalesce(sum(name LIKE 'enc1:%'),0) FROM outing_requests
           UNION ALL SELECT 'outing_invites.email',count(*),coalesce(sum(email LIKE 'enc1:%'),0) FROM outing_invites"
           npx wrangler d1 execute roamly-db --remote --json --command "$Q" 2>/dev/null \
-            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{for(const r of JSON.parse(s)[0].results)console.log(`${r.f.padEnd(24)} ${String(r.sealed).padStart(5)} of ${String(r.total).padStart(5)} encrypted`);})'
+            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const out=JSON.parse(s);if(!Array.isArray(out)){console.log("query error:",out.error?.text??"unknown");for(const n of out.error?.notes??[])console.log(" -",n.text);process.exit(1);}for(const r of out[0].results)console.log(`${r.f.padEnd(24)} ${String(r.sealed).padStart(5)} of ${String(r.total).padStart(5)} encrypted`);})'
