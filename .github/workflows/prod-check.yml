@@ -1,41 +1,23 @@
-# Temporary: read-only check that production encryption is on, then gets removed.
-# Prints only whether DATA_ENCRYPTION_KEY exists (name, never the value) and row counts, because these
-# logs are public: no personal data or secret values.
-name: Production check (encryption)
+# Temporary: confirms the live site reads encrypted data back (public trip list; prints counts only), then gets removed.
+name: Production check (decrypt)
 on:
   push:
     branches: [claude/modest-planck-igiaoe]
 permissions:
   contents: read
 jobs:
-  encryption:
+  decrypt:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: c429b2fc4f62d2414c880d87fce53206
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24.16.0'
-          cache: npm
-      - run: npm ci
-      - name: Is DATA_ENCRYPTION_KEY set? (name only)
+      - name: Public trip list decrypts
         run: |
-          if npx wrangler secret list --name roamly 2>/dev/null | grep -q '"DATA_ENCRYPTION_KEY"'; then echo "DATA_ENCRYPTION_KEY: set"; else echo "DATA_ENCRYPTION_KEY: NOT set"; fi
-      - name: How much personal data is encrypted (counts only)
-        run: |
-          cat > count.mjs <<'EOF'
-          import { execFileSync } from 'node:child_process';
-          const cols = [['trips','payload'],['trip_shares','payload'],['search_history','intake'],['waitlist','email'],['outings','payload'],['outings','meeting'],['outing_requests','name'],['outing_invites','email']];
-          const sql = 'SELECT ' + cols.map(([t, c], i) => `(SELECT count(*) FROM ${t}) t${i}, (SELECT count(*) FROM ${t} WHERE ${c} LIKE 'enc1:%') s${i}`).join(', ');
-          let raw;
-          try { raw = execFileSync('npx', ['wrangler', 'd1', 'execute', 'roamly-db', '--remote', '--json', '--command', sql], { stdio: ['ignore', 'pipe', 'ignore'] }); }
-          catch (e) { raw = e.stdout; }
-          const out = JSON.parse(raw.toString());
-          if (!Array.isArray(out)) { console.log('query error:', out.error?.text); for (const n of out.error?.notes ?? []) console.log(' -', n.text); process.exit(1); }
-          const row = out[0].results[0];
-          cols.forEach(([t, c], i) => console.log(`${(t + '.' + c).padEnd(24)} ${String(row['s' + i]).padStart(5)} of ${String(row['t' + i]).padStart(5)} encrypted`));
+          cat > check.mjs <<'EOF'
+          const r = await fetch('https://heyroamly.com/api/together?city=&destination=', { headers: { 'X-Roamly-Client': 'web' } });
+          const body = await r.json().catch(() => ({}));
+          const trips = body.trips ?? [];
+          const readable = trips.filter(t => typeof t.title === 'string' && t.title && !t.title.startsWith('enc1:')).length;
+          console.log(`status ${r.status}; ${trips.length} published trips listed; ${readable} with readable titles`);
+          process.exit(r.status === 200 && readable === trips.length ? 0 : 1);
           EOF
-          node count.mjs
+          node check.mjs
