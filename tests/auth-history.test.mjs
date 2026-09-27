@@ -764,3 +764,64 @@ test('Plus receipts and refunds: one receipt per purchase, a full refund takes b
     sql.exec("DELETE FROM orders WHERE owner='refund-buyer'");sql.exec("DELETE FROM subscriptions WHERE owner='refund-buyer'");sql.exec("DELETE FROM usage WHERE key LIKE 'checkout:refund-buyer:%'");
   }
 });
+test('launch code ROAMLY99: ₹99 once per account, for the first 200 accounts, never oversold',async()=>{
+  jar.clear();const original=globalThis.fetch;
+  const settings={RAZORPAY_ENABLED:'true',RAZORPAY_KEY_ID:'fixture',RAZORPAY_KEY_SECRET:'fixture-secret',RAZORPAY_WEBHOOK_SECRET:'webhook-fixture',RAZORPAY_INTERNATIONAL:'true',RESEND_API_KEY:'re_test',EMAIL_FROM:'Roamly <billing@example.test>',DATA_ENCRYPTION_KEY:SEAL_KEY};
+  Object.assign(context.env,settings);
+  const created=[],mails=[];let n=0;
+  globalThis.fetch=async(url,options)=>{
+    const u=new URL(url),body=JSON.parse(options.body);
+    if(u.host==='api.resend.com'){mails.push(body);return Response.json({id:'email_'+mails.length});}
+    if(u.pathname==='/v1/orders'){created.push(body);return Response.json({id:'order_launch'+(++n)+Date.now(),amount:body.amount,currency:body.currency});}
+    throw Error('Unexpected request '+url);
+  };
+  const sign=async(secret,text)=>{const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);return Buffer.from(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(text))).toString('hex');};
+  const check=async code=>{const r=await app.coupon.POST(req('/api/billing/coupon',{code}));return {status:r.status,body:await r.json()};};
+  const checkout=async(code,country='IN')=>{const r=req('/api/billing/checkout',code===undefined?{}:{code});r.headers.set('cf-ipcountry',country);const res=await app.checkout.POST(r);return {status:res.status,body:await res.json()};};
+  const pay=async(order,payment)=>(await app.billingCallback.POST(new Request(origin+'/api/billing/callback',{method:'POST',headers:{origin:'https://api.razorpay.com'},body:new URLSearchParams({razorpay_order_id:order,razorpay_payment_id:payment,razorpay_signature:await sign(settings.RAZORPAY_KEY_SECRET,order+'|'+payment)})}))).headers.get('location');
+  const holders=(count,status='paid')=>{const add=sql.prepare("INSERT INTO orders (id,owner,amount,currency,status,coupon,created_at) VALUES (?,?,9900,'INR',?,'ROAMLY99',?)");for(let i=0;i<count;i++)add.run('order_held'+status+i,'launch-held-'+status+i,status,Math.floor(Date.now()/1000));};
+  try{
+    context.headers=new Headers({host:platformHost});
+    assert.equal((await check('ROAMLY99')).status,401,'needs an account');
+    user('launch-a');
+    assert.deepEqual(await check('NOPE'),{status:400,body:{error:'That code isn’t valid.'}});
+    assert.deepEqual(await check(' roamly99 '),{status:200,body:{code:'ROAMLY99',amount:9900,currency:'INR',label:'₹99',left:200,places:200}},'any case, spaces trimmed');
+    // The code turns checkout into ₹99 in rupees, even where the full price would be charged in dollars.
+    assert.deepEqual([(await checkout(undefined,'US')).body.amount,created.at(-1).currency],[1000,'USD'],'no code: the usual price');
+    const a=await checkout('roamly99','US');
+    assert.equal(a.status,200);assert.deepEqual([a.body.amount,a.body.currency],[9900,'INR']);
+    assert.deepEqual(created.at(-1),{amount:9900,currency:'INR',receipt:created.at(-1).receipt,notes:{roamly_owner:'launch-a',plan:'plus',coupon:'ROAMLY99'}});
+    const row=sql.prepare('SELECT amount,currency,coupon,created_at FROM orders WHERE id=?').get(a.body.orderId);
+    assert.deepEqual([row.amount,row.currency,row.coupon],[9900,'INR','ROAMLY99']);assert.ok(Math.abs(row.created_at-Date.now()/1000)<60);
+    // Reopening checkout reuses the order holding the place: no second Razorpay order, no extra attempt counted.
+    const orders=created.length,again=await checkout('ROAMLY99');
+    assert.equal(again.body.orderId,a.body.orderId);assert.equal(created.length,orders);
+    // Paying grants the usual 30 days, with a ₹99 receipt; the code can't be used again, even after a refund.
+    assert.equal(await pay(a.body.orderId,'pay_launch_a'),origin+'/pricing?checkout=activated');
+    assert.equal((await (await app.billingStatus.GET()).json()).plus,true);
+    assert.ok(mails.at(-1).text.includes('Amount paid: ₹99.00'),'receipt shows ₹99');
+    assert.deepEqual(await check('ROAMLY99'),{status:409,body:{error:'You’ve already used this code.'}});
+    assert.equal((await checkout('ROAMLY99')).status,409);
+    sql.prepare("UPDATE orders SET status='refunded' WHERE id=?").run(a.body.orderId);
+    assert.equal((await check('ROAMLY99')).status,409,'a refund does not give the code back');
+    assert.equal((await checkout()).body.amount,49900,'the full price still works');
+    // 200 places. Paid, refunded and open checkouts hold one; an abandoned checkout lets its place go after 30 minutes.
+    user('launch-b');
+    holders(196);holders(2,'refunded');
+    assert.equal((await check('ROAMLY99')).body.left,1,'a (refunded), 196 paid, 2 refunded = 199 held');
+    const b=await checkout('ROAMLY99');assert.equal(b.status,200);
+    user('launch-c');
+    assert.deepEqual(await check('ROAMLY99'),{status:409,body:{error:'All 200 launch places have been taken.'}},'b\'s open checkout holds the last place');
+    sql.prepare('UPDATE orders SET created_at=created_at-1801 WHERE id=?').run(b.body.orderId);
+    assert.equal((await check('ROAMLY99')).body.left,1,'abandoned for 30 minutes: the place is free again');
+    // Two people going for the last place at the same moment: exactly one gets it.
+    // (Straight to the order code: the test's signed-in user is shared, so two routes can't run as two people at once.)
+    const race=await Promise.allSettled(['launch-c','launch-d'].map(owner=>app.billing.createOrder(owner,'INR',owner+'@example.test','ROAMLY99')));
+    assert.deepEqual(race.map(r=>r.status).sort(),['fulfilled','rejected']);
+    assert.match(race.find(r=>r.status==='rejected').reason.message,/^All 200 launch places have/);
+    assert.equal(sql.prepare("SELECT count(*) n FROM orders WHERE coupon='ROAMLY99' AND owner IN ('launch-c','launch-d')").get().n,1);
+  } finally {
+    globalThis.fetch=original;for(const k of Object.keys(settings))delete context.env[k];context.headers=new Headers();
+    sql.exec("DELETE FROM orders WHERE owner LIKE 'launch-%'");sql.exec("DELETE FROM subscriptions WHERE owner LIKE 'launch-%'");sql.exec("DELETE FROM usage WHERE key LIKE 'checkout:launch-%'");
+  }
+});

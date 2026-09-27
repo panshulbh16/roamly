@@ -19,19 +19,21 @@ const {BillingControls}=await import(pathToFileURL(join(dir,'fixture.mjs')));
 const nodes=n=>!n||typeof n!=='object'?[]:Array.isArray(n)?n.flatMap(nodes):[n,...nodes(n.props?.children)];
 const text=n=>typeof n==='string'||typeof n==='number'?String(n):Array.isArray(n)?n.map(text).join(' '):n?.props?text(n.props.children):'';
 const render=()=>{cursor=0;return BillingControls({price:'₹499'});};
-const button=tree=>nodes(tree).find(n=>n.type==='button');
+const button=tree=>nodes(tree).find(n=>n.type==='button'&&n.props.className==='primary'); // the buy button
 const tick=()=>new Promise(r=>setImmediate(r));
 test.after(()=>{rmSync(dir,{recursive:true,force:true});delete globalThis.__billingHooks;delete globalThis.__billingToasts;});
 
 // A browser on /pricing: records Plus announcements, address rewrites and the Razorpay options.
 function browser(search='',status={plus:false,until:0}){
- const page={events:[],replaced:null,checkout:null,opened:false,requests:[]};
+ const page={events:[],replaced:null,checkout:null,opened:false,requests:[],bodies:{}};
  globalThis.window={location:{origin:'https://heyroamly.com',pathname:'/pricing',search},history:{state:{router:'kept'},replaceState(s,_,url){page.replaced={s,url};}},
   dispatchEvent(e){page.events.push(e);return true;},
   Razorpay:class{constructor(options){page.checkout=options;}open(){page.opened=true;}on(){}}};
  globalThis.fetch=async(url,options)=>{page.requests.push([url,options?.method??'GET']);assert.equal(new Headers(options?.headers).get('x-roamly-client'),'web','calls go through lib/client/api.ts');
   if(url==='/api/billing/status')return Response.json(status);
-  if(url==='/api/billing/checkout')return Response.json({orderId:'order_abc',amount:49900,currency:'INR',keyId:'rzp_test_fixture',email:'buyer@example.test'});
+  const sent=options?.body?JSON.parse(options.body):undefined;if(sent)page.bodies[url]=sent;
+  if(url==='/api/billing/coupon')return sent.code.trim().toUpperCase()==='ROAMLY99'?Response.json({code:'ROAMLY99',amount:9900,currency:'INR',label:'₹99',left:137,places:200}):Response.json({error:'That code isn’t valid.'},{status:400});
+  if(url==='/api/billing/checkout')return Response.json({orderId:'order_abc',amount:sent?.code?9900:49900,currency:'INR',keyId:'rzp_test_fixture',email:'buyer@example.test'});
   return Response.json({error:'unexpected '+url},{status:404});};
  state.length=toasts.length=0;
  return page;
@@ -84,4 +86,29 @@ test('failed, unverified and still-activating returns explain what happened with
  // The address cannot put arbitrary words on the page.
  const forged=browser('?checkout=Call+%2B1-555-0100+for+a+refund');await load();
  assert.doesNotMatch(text(render()),/555|refund/);assert.equal(forged.events.length,0);assert.deepEqual(toasts,[]);
+});
+
+test('a shared launch-code link applies ₹99, checkout sends the code, and changing the code drops the offer',async()=>{
+ const page=browser('?code=roamly99');await load();await tick();await tick();
+ const shown=()=>text(render()).replace(/\s+/g,' ').replace(/ ([.,])/g,'$1'); // pieces of JSX text join with spaces here
+ assert.match(shown(),/ROAMLY99 applied: Plus for ₹99\. 137 of 200 launch places left\./);
+ assert.match(shown(),/Get Plus · ₹99 for 30 days/);assert.match(shown(),/₹99 for 30 days with ROAMLY99, once per account \(usually ₹499\)/);
+ assert.deepEqual(page.bodies['/api/billing/coupon'],{code:'roamly99'});
+ assert.equal(page.replaced,null,'the code stays in the address, so a reload keeps it');
+ await button(render()).props.onClick();await tick();
+ assert.deepEqual(page.bodies['/api/billing/checkout'],{code:'ROAMLY99'},'checkout asks for the code; the server sets the price');
+ assert.equal(page.checkout.amount,9900);
+ page.checkout.modal.ondismiss();
+ const input=()=>nodes(render()).find(n=>n.type==='input'),form=()=>nodes(render()).find(n=>n.type==='form');
+ input().props.onChange({target:{value:'WRONG'}});
+ assert.match(shown(),/Get Plus · ₹499 for 30 days/,'editing the code drops the offer');
+ await form().props.onSubmit({preventDefault(){}});await tick();
+ assert.match(shown(),/That code isn’t valid\./);assert.match(shown(),/Get Plus · ₹499/);
+ await button(render()).props.onClick();await tick();
+ assert.deepEqual(page.bodies['/api/billing/checkout'],{},'no code: full price');
+});
+test('without a code nothing extra is asked for',async()=>{
+ const page=browser();await load();
+ assert.ok(!page.requests.some(([u])=>u==='/api/billing/coupon'));
+ assert.match(text(render()),/Launch code/);
 });

@@ -21,6 +21,7 @@ export * as checkout from "../app/api/billing/checkout/route";
 export * as billingStatus from "../app/api/billing/status/route";
 export * as billingCallback from "../app/api/billing/callback/route";
 export * as webhook from "../app/api/billing/webhook/route";
+export * as coupon from "../app/api/billing/coupon/route";
 
 export * as together from "../app/api/together/route";
 export * as inviteAccept from "../app/api/together/invite/route";

@@ -6,6 +6,25 @@ const config = () => env as unknown as Record<string,string|undefined>;
 // Orders work with international cards and PayPal; Razorpay subscriptions support neither USD nor PayPal here.
 export const PASS_DAYS = 30;
 export const PRICES = { INR: { amount: 49900, label: "₹499" }, USD: { amount: 1000, label: "$10" } } as const;
+/**
+ * Launch offer: any account can use the code once for a 30-day pass at ₹99, until 200 accounts have. A place is held
+ * by paying (a refund doesn't give it back) or, for 30 minutes, by an open checkout, so the 200 can't be oversold by
+ * people paying at the same moment. Counted per account, so opening several checkouts holds one place.
+ */
+export const LAUNCH = { code: "ROAMLY99", amount: 9900, currency: "INR", label: "₹99", places: 200, holdSeconds: 30 * 60 } as const;
+export const launchCode = (v: unknown) => typeof v === "string" ? v.trim().toUpperCase().slice(0, 40) : "";
+const USED = "coupon=? AND owner=? AND status IN ('paid','refunded')";
+const HELD = "SELECT count(DISTINCT owner) FROM orders WHERE coupon=? AND owner<>? AND (status IN ('paid','refunded') OR (status='created' AND created_at>?))";
+export async function launchOffer(owner: string, code: string) {
+  if (code !== LAUNCH.code) throw new ApiError(400, "That code isn’t valid.");
+  const since = Math.floor(Date.now() / 1000) - LAUNCH.holdSeconds;
+  const row = await db().prepare(`SELECT EXISTS(SELECT 1 FROM orders WHERE ${USED}) used, (${HELD}) held`)
+    .bind(code, owner, code, owner, since).first<{ used: number; held: number }>();
+  if (row?.used) throw new ApiError(409, "You’ve already used this code.");
+  const left = LAUNCH.places - (row?.held ?? 0);
+  if (left <= 0) throw new ApiError(409, "All 200 launch places have been taken.");
+  return { code, amount: LAUNCH.amount, currency: LAUNCH.currency, label: LAUNCH.label, left, places: LAUNCH.places };
+}
 export type BillingCurrency = keyof typeof PRICES;
 export function billingReady() {
   const c=config();
@@ -27,15 +46,28 @@ async function razorpay(path:string, data:unknown) {
 export type SubscriptionRow={owner:string;subscription_id:string|null;status:string;current_end:number;paid_count:number;checked_at:number};
 export async function membership(owner:string) { return db().prepare("SELECT * FROM subscriptions WHERE owner=?").bind(owner).first<SubscriptionRow>(); }
 export function hasPlus(row:SubscriptionRow|null) { return !!row && row.status==="active" && row.paid_count>0 && row.current_end>Math.floor(Date.now()/1000); }
-export async function createOrder(owner:string,currency:BillingCurrency,email:string) {
-  const {amount}=PRICES[currency];
+export async function createOrder(owner:string,billing:BillingCurrency,email:string,code="") {
+  const offer=code?await launchOffer(owner,code):null,now=Math.floor(Date.now()/1000);
+  const {amount,currency}=offer??{amount:PRICES[billing].amount,currency:billing};
+  if(offer){ // reopening checkout reuses the order already holding this account's place
+    const open=await db().prepare("SELECT id FROM orders WHERE coupon=? AND owner=? AND status='created' AND created_at>? ORDER BY created_at DESC LIMIT 1")
+      .bind(offer.code,owner,now-LAUNCH.holdSeconds).first<{id:string}>();
+    if(open) return {orderId:open.id,amount,currency,keyId:config().RAZORPAY_KEY_ID!};
+  }
   // Each checkout creates a Razorpay order; a daily cap keeps a script from flooding the account with them.
   const attempt=await db().prepare("INSERT INTO usage (key,count) VALUES (?,1) ON CONFLICT(key) DO UPDATE SET count=count+1 WHERE count<20 RETURNING count")
     .bind(`checkout:${owner}:${new Date().toISOString().slice(0,10)}`).first();
   if(!attempt) throw new ApiError(429,"Too many checkout attempts today. Please try again tomorrow.");
-  const order=await razorpay("orders",{amount,currency,receipt:"roamly-"+Date.now(),notes:{roamly_owner:owner,plan:"plus"}});
+  const order=await razorpay("orders",{amount,currency,receipt:"roamly-"+Date.now(),notes:{roamly_owner:owner,plan:"plus",...(offer?{coupon:offer.code}:{})}});
   if(!/^order_[a-zA-Z0-9]+$/.test(order.id??"")) throw new ApiError(502,"Could not prepare checkout. Please try again.");
-  await db().prepare("INSERT INTO orders (id,owner,amount,currency,email) VALUES (?,?,?,?,?)").bind(order.id,owner,amount,currency,email?await seal(email,"orders.email"):null).run();
+  const values=[order.id,owner,amount,currency,email?await seal(email,"orders.email"):null,offer?.code??null,now];
+  const insert="INSERT INTO orders (id,owner,amount,currency,email,coupon,created_at) ";
+  // With the code, the place is re-checked in the same statement, so two people paying for the 200th place can't both get it.
+  const saved=offer
+    ?await db().prepare(insert+`SELECT ?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM orders WHERE ${USED}) AND (${HELD})<?`)
+      .bind(...values,offer.code,owner,offer.code,owner,now-LAUNCH.holdSeconds,LAUNCH.places).run()
+    :await db().prepare(insert+"VALUES (?,?,?,?,?,?,?)").bind(...values).run();
+  if(!Number(saved.meta.changes??0)) throw new ApiError(409,"All 200 launch places have just been taken.");
   return {orderId:order.id as string,amount,currency,keyId:config().RAZORPAY_KEY_ID!};
 }
 async function hmacValid(secret:string,data:Uint8Array,signature:string) {
