@@ -53,8 +53,8 @@ test('the API answers only Roamly pages; typed-in addresses, other sites and scr
     ['wrong header value','/api/trips',{headers:{'X-Roamly-Client':'curl'}}],
     ['percent-encoded path','/%61pi/trips',{}],['double slash','//api/trips',{}],['upper case','/API/trips',{}],
   ]){const [status,body]=await call(path,init);assert.equal(status,404,why);assert.doesNotMatch(body,/secret/,why);}
-  // Razorpay's own calls come from outside and prove themselves with signatures.
-  for(const path of ['/api/billing/callback','/api/billing/webhook'])
+  // The payment providers' calls come from outside and prove themselves (signatures, or asking Stripe).
+  for(const path of ['/api/billing/callback','/api/billing/webhook','/api/billing/stripe/return','/api/billing/stripe/webhook'])
     assert.equal((await call(path,{method:'POST',headers:{'sec-fetch-site':'cross-site'}}))[0],200,path);
   assert.equal((await call('/pricing',{headers:{'sec-fetch-site':'none'}},true))[0],200,'pages are unaffected');
 });

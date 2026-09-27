@@ -764,6 +764,87 @@ test('Plus receipts and refunds: one receipt per purchase, a full refund takes b
     sql.exec("DELETE FROM orders WHERE owner='refund-buyer'");sql.exec("DELETE FROM subscriptions WHERE owner='refund-buyer'");sql.exec("DELETE FROM usage WHERE key LIKE 'checkout:refund-buyer:%'");
   }
 });
+test('Stripe: buyers outside India pay $10 on Stripe Checkout; payment is confirmed with Stripe; refunds take the pass back',async()=>{
+  jar.clear();user('stripe-buyer');const original=globalThis.fetch;
+  const settings={RAZORPAY_ENABLED:'true',RAZORPAY_KEY_ID:'fixture',RAZORPAY_KEY_SECRET:'fixture-secret',RAZORPAY_WEBHOOK_SECRET:'webhook-fixture',STRIPE_ENABLED:'true',STRIPE_SECRET_KEY:'sk_test_fixture',STRIPE_WEBHOOK_SECRET:'whsec_fixture',RESEND_API_KEY:'re_test',EMAIL_FROM:'Roamly <billing@example.test>',DATA_ENCRYPTION_KEY:SEAL_KEY};
+  Object.assign(context.env,settings);
+  const sessions={},forms=[],gets=[],mails=[];let n=0,m=0;
+  globalThis.fetch=async(url,options={})=>{
+    const u=new URL(url);
+    if(u.host==='api.stripe.com'){
+      assert.equal(new Headers(options.headers).get('authorization'),'Bearer sk_test_fixture');
+      if(options.method==='POST'&&u.pathname==='/v1/checkout/sessions'){const form=Object.fromEntries(new URLSearchParams(options.body));forms.push(form);const id='cs_test_s'+(++n);
+        sessions[id]={id,object:'checkout.session',url:'https://checkout.stripe.com/c/pay/'+id,status:'open',payment_status:'unpaid',amount_total:1000,currency:'usd',payment_intent:null,customer_details:{email:'stripe-buyer@example.test'}};return Response.json(sessions[id]);}
+      const id=u.pathname.split('/').pop();gets.push(id);return sessions[id]?Response.json(sessions[id]):Response.json({error:{}},{status:404});
+    }
+    const body=JSON.parse(options.body);
+    if(u.host==='api.resend.com'){mails.push(body);return Response.json({id:'email_'+mails.length});}
+    if(u.pathname==='/v1/orders')return Response.json({id:'order_stripeflow'+(++m)+Date.now(),amount:body.amount,currency:body.currency});
+    throw Error('Unexpected request '+url);
+  };
+  const checkout=async(country,code)=>{const r=req('/api/billing/checkout',code?{code}:{});if(country)r.headers.set('cf-ipcountry',country);const res=await app.checkout.POST(r);return {status:res.status,body:await res.json()};};
+  const back=async id=>(await app.stripeReturn.GET(new Request(origin+'/api/billing/stripe/return?session_id='+id))).headers.get('location');
+  const hmac=async(secret,text)=>{const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);return Buffer.from(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(text))).toString('hex');};
+  const hook=async(event,{secret='whsec_fixture',t=Math.floor(Date.now()/1000),extra=''}={})=>{const body=JSON.stringify(event);
+    return (await app.stripeWebhook.POST(new Request(origin+'/api/billing/stripe/webhook',{method:'POST',headers:{'stripe-signature':`t=${t},${extra}v1=${await hmac(secret,t+'.'+body)}`},body}))).status;};
+  const pass=()=>({...sql.prepare("SELECT paid_count,current_end FROM subscriptions WHERE owner='stripe-buyer'").get()});
+  const refund=(pi,refunded,amount_refunded)=>({type:'charge.refunded',data:{object:{object:'charge',id:'ch_'+pi,amount:1000,amount_refunded,refunded,payment_intent:pi,billing_details:{email:null}}}});
+  try{
+    // Who pays where: India, unknown countries and the ₹99 code stay on Razorpay; elsewhere goes to Stripe.
+    assert.deepEqual([(await checkout('IN')).body.provider,(await checkout()).body.provider,(await checkout('US','ROAMLY99')).body.amount],['razorpay','razorpay',9900]);
+    const a=await checkout('US');
+    assert.deepEqual(a,{status:200,body:{provider:'stripe',url:'https://checkout.stripe.com/c/pay/cs_test_s1'}});
+    assert.deepEqual(forms[0],{mode:'payment','line_items[0][quantity]':'1','line_items[0][price_data][currency]':'usd','line_items[0][price_data][unit_amount]':'1000','line_items[0][price_data][product_data][name]':'Roamly Plus · 30-day pass',
+      success_url:origin+'/api/billing/stripe/return?session_id={CHECKOUT_SESSION_ID}',cancel_url:origin+'/pricing?checkout=cancelled','metadata[roamly_owner]':'stripe-buyer','metadata[plan]':'plus','payment_intent_data[metadata][roamly_owner]':'stripe-buyer',customer_email:'stripe-buyer@example.test'});
+    const row=sql.prepare("SELECT amount,currency,provider,status,email FROM orders WHERE id='cs_test_s1'").get();
+    assert.deepEqual([row.amount,row.currency,row.provider,row.status],[1000,'USD','stripe','created']);assert.match(row.email,/^enc1:/);
+    // The return address proves nothing by itself: unknown sessions, unpaid ones and a different amount grant nothing.
+    assert.equal(await back('cs_test_unknown'),origin+'/pricing?checkout=unverified');assert.equal(await back('not-a-session'),origin+'/pricing?checkout=unverified');
+    assert.deepEqual(gets,[],'Stripe is only asked about our own sessions');
+    assert.equal(await back('cs_test_s1'),origin+'/pricing?checkout=unverified','still open');
+    Object.assign(sessions.cs_test_s1,{status:'complete',payment_status:'paid',payment_intent:'pi_s1',amount_total:100});
+    assert.equal(await back('cs_test_s1'),origin+'/pricing?checkout=unverified','paid a different amount');
+    assert.equal(pass().paid_count,undefined,'no pass yet');
+    // Paid: the pass is granted once, with one receipt, however the news arrives.
+    sessions.cs_test_s1.amount_total=1000;
+    assert.equal(await back('cs_test_s1'),origin+'/pricing?checkout=activated');
+    const first=pass();assert.equal(first.paid_count,1);assert.ok(Math.abs(first.current_end-(Date.now()/1000+30*86400))<60);
+    assert.equal((await (await app.billingStatus.GET()).json()).plus,true);
+    assert.equal(mails.length,1);assert.equal(mails[0].to,'stripe-buyer@example.test');assert.match(mails[0].text,/Amount paid: (US)?\$10\.00/);assert.ok(mails[0].text.includes('Payment: pi_s1'));
+    assert.equal(await back('cs_test_s1'),origin+'/pricing?checkout=activated','reload');
+    assert.equal(await hook({type:'checkout.session.completed',data:{object:sessions.cs_test_s1}}),200);
+    assert.deepEqual([pass().paid_count,mails.length],[1,1]);
+    // Webhooks must be signed with the webhook secret, recently; a rotated secret's extra v1 is fine.
+    assert.equal(await hook({type:'checkout.session.completed',data:{object:sessions.cs_test_s1}},{secret:'whsec_wrong'}),400);
+    assert.equal(await hook({type:'checkout.session.completed',data:{object:sessions.cs_test_s1}},{t:Math.floor(Date.now()/1000)-600}),400,'replayed after 10 minutes');
+    assert.equal(await hook({type:'noop'},{extra:'v1='+'0'.repeat(64)+','}),200);
+    // A payment that clears later (bank debits): pending on return, granted by the webhook.
+    await checkout('DE');Object.assign(sessions.cs_test_s2,{status:'complete'});
+    assert.equal(await back('cs_test_s2'),origin+'/pricing?checkout=pending');assert.equal(pass().paid_count,1);
+    Object.assign(sessions.cs_test_s2,{payment_status:'paid',payment_intent:'pi_s2'});
+    assert.equal(await hook({type:'checkout.session.async_payment_succeeded',data:{object:sessions.cs_test_s2}}),200);
+    assert.deepEqual([pass().paid_count,pass().current_end,mails.length],[2,first.current_end+30*86400,2]);
+    // Refunds: partial ones and unknown payments change nothing; a full one takes back exactly that pass, once.
+    assert.equal(await hook(refund('pi_s1',false,300)),200);assert.equal(await hook(refund('pi_unknown',true,1000)),200);
+    assert.deepEqual([pass().paid_count,mails.length],[2,2]);
+    assert.equal(await hook(refund('pi_s1',true,1000)),200);assert.equal(await hook(refund('pi_s1',true,1000)),200);
+    assert.deepEqual(pass(),{paid_count:1,current_end:first.current_end});
+    assert.equal(sql.prepare("SELECT status FROM orders WHERE id='cs_test_s1'").get().status,'refunded');
+    assert.equal(mails.length,3);assert.equal(mails[2].subject,'Your Roamly Plus refund');assert.match(mails[2].text,/Refunded: (US)?\$10\.00/);
+    // Stripe switched off: everyone is back on Razorpay and Stripe's routes accept nothing.
+    for(const k of ['STRIPE_ENABLED','STRIPE_SECRET_KEY','STRIPE_WEBHOOK_SECRET'])delete context.env[k];
+    assert.equal((await checkout('US')).body.provider,'razorpay');
+    assert.equal(await hook({type:'noop'}),400);
+    // Only Stripe set up: it takes every buyer, and Plus still counts.
+    Object.assign(context.env,{STRIPE_ENABLED:'true',STRIPE_SECRET_KEY:'sk_test_fixture',STRIPE_WEBHOOK_SECRET:'whsec_fixture'});delete context.env.RAZORPAY_ENABLED;
+    assert.equal((await checkout('IN')).body.provider,'stripe');
+    const status=await (await app.billingStatus.GET()).json();assert.deepEqual([status.enabled,status.plus],[true,true]);
+  } finally {
+    globalThis.fetch=original;for(const k of Object.keys(settings))delete context.env[k];context.headers=new Headers();
+    sql.exec("DELETE FROM orders WHERE owner='stripe-buyer'");sql.exec("DELETE FROM subscriptions WHERE owner='stripe-buyer'");sql.exec("DELETE FROM usage WHERE key LIKE 'checkout:stripe-buyer:%'");
+  }
+});
+
 test('launch code ROAMLY99: ₹99 once per account, for the first 200 accounts, never oversold',async()=>{
   jar.clear();const original=globalThis.fetch;
   const settings={RAZORPAY_ENABLED:'true',RAZORPAY_KEY_ID:'fixture',RAZORPAY_KEY_SECRET:'fixture-secret',RAZORPAY_WEBHOOK_SECRET:'webhook-fixture',RAZORPAY_INTERNATIONAL:'true',RESEND_API_KEY:'re_test',EMAIL_FROM:'Roamly <billing@example.test>',DATA_ENCRYPTION_KEY:SEAL_KEY};
