@@ -85,6 +85,13 @@
       "when": 1790528981733,
       "tag": "0011_launch_code",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1790531471426,
+      "tag": "0012_stripe_orders",
+      "breakpoints": true
     }
   ]
 }

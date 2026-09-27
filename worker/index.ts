@@ -40,9 +40,10 @@ const CANONICAL_HOST = "heyroamly.com";
 // registered with the old URL (e.g. the Razorpay webhook) keep working.
 const REDIRECT_HOSTS = new Set(["www.heyroamly.com", "roamly.panshulbh16.workers.dev"]);
 // The API only serves Roamly's own pages, which send CLIENT_HEADER (lib/client/api.ts). A typed-in API address,
-// another site or a bare script gets the same 404 as a missing route. Razorpay's checkout callback (a cross-site
-// form post) and webhook (server to server) are the only doors from outside; each verifies Razorpay's signature.
-const EXTERNAL_API = new Set(["/api/billing/callback", "/api/billing/webhook"]);
+// another site or a bare script gets the same 404 as a missing route. The only doors from outside are the payment
+// providers': Razorpay's checkout callback (a cross-site form post) and webhook, each checking Razorpay's signature,
+// and Stripe's return page (a link from Stripe Checkout, confirmed with Stripe's API) and signed webhook.
+const EXTERNAL_API = new Set(["/api/billing/callback", "/api/billing/webhook", "/api/billing/stripe/return", "/api/billing/stripe/webhook"]);
 function hiddenApi(request: Request, pathname: string) {
   let path = pathname;
   try { path = decodeURIComponent(pathname); } catch { /* malformed: judged as sent */ }
