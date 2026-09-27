@@ -23,10 +23,16 @@ const subscribe = (l: () => void) => { listeners.add(l); return () => { listener
 /**
  * What Google may see of an address: the route only. Query strings (invite links carry a token that signs people in;
  * trip IDs, checkout results) and share IDs stay on the site, and other sites' addresses are cut to their origin.
+ * The one exception is campaign tags (?utm_source=reddit&utm_campaign=…) so a post or ad gets credit for its visits;
+ * only short plain values pass, so an email address or token put in a tag is dropped.
  */
+const CAMPAIGN = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"];
 export function safeUrl(href: string) {
   const u = new URL(href, location.href);
-  return u.origin !== location.origin ? u.origin + "/" : u.origin + u.pathname.replace(/^\/share\/[^/]+/, "/share/:id");
+  if (u.origin !== location.origin) return u.origin + "/";
+  const tags = new URLSearchParams();
+  for (const key of CAMPAIGN) { const v = u.searchParams.get(key); if (v && /^[\w.-]{1,64}$/.test(v)) tags.set(key, v); }
+  return u.origin + u.pathname.replace(/^\/share\/[^/]+/, "/share/:id") + (tags.toString() ? "?" + tags : "");
 }
 let lastView: { doc: Document; page: string } | null = null; // this document's previous page view
 const tracked = () => typeof window !== "undefined" && process.env.NODE_ENV === "production" && !/^(localhost|127\.0\.0\.1|\[::1\])$|\.local$/.test(location.hostname);
