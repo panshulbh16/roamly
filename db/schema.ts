@@ -78,16 +78,18 @@ export const outingReports = sqliteTable("outing_reports", {
 }, t => [primaryKey({columns:[t.tripId,t.reporter]})]);
 
 // Email invitations: only a SHA-256 of the link token is stored; each link works once, for 14 days.
+// The email is sealed (lib/server/vault.ts); email_key is its keyed lookup hash, used for de-duplication.
 export const outingInvites = sqliteTable("outing_invites", {
   id: text("id").primaryKey(),
   tripId: text("trip_id").notNull().references(()=>outings.id),
   email: text("email").notNull(),
+  emailKey: text("email_key"),
   tokenHash: text("token_hash").notNull(),
   status: text("status").notNull().default("sent"),
   member: text("member"),
   createdAt: text("created_at").notNull(),
   expiresAt: integer("expires_at").notNull(),
-}, t => [uniqueIndex("idx_outing_invites_trip_email").on(t.tripId,t.email),uniqueIndex("idx_outing_invites_token").on(t.tokenHash)]);
+}, t => [uniqueIndex("idx_outing_invites_trip_email_key").on(t.tripId,t.emailKey),uniqueIndex("idx_outing_invites_token").on(t.tokenHash)]);
 
 // Event history deliberately survives a trip's deletion; trip links re-check access.
 export const notifications = sqliteTable("notifications", {

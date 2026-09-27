@@ -1,5 +1,6 @@
 import type { Intake, Trip } from "@/lib/trips/schema";
 import type { HistoryEntry } from "./types";
+import { seal, unseal } from "@/lib/server/vault";
 type HistoryRow = {
   id: string;
   intake: string;
@@ -8,13 +9,13 @@ type HistoryRow = {
   error: string | null;
   created_at: string;
 };
-function decode(row: HistoryRow): HistoryEntry {
+async function decode(row: HistoryRow): Promise<HistoryEntry> {
   return {
     id: row.id,
-    intake: JSON.parse(row.intake),
-    trip: row.trip ? JSON.parse(row.trip) : null,
+    intake: JSON.parse(await unseal(row.intake, "search_history.intake")),
+    trip: row.trip ? JSON.parse(await unseal(row.trip, "search_history.trip")) : null,
     status: row.status,
-    error: row.error,
+    error: row.error && await unseal(row.error, "search_history.error"),
     createdAt: row.created_at,
   };
 }
@@ -31,7 +32,7 @@ export async function startSearch(
     .bind(
       id,
       owner,
-      JSON.stringify(intake),
+      await seal(JSON.stringify(intake), "search_history.intake"),
       "pending",
       new Date().toISOString(),
     )
@@ -48,7 +49,7 @@ export async function completeSearch(
     .prepare(
       "UPDATE search_history SET trip=?,status='completed',error=NULL WHERE id=? AND owner=?",
     )
-    .bind(JSON.stringify(trip), id, owner)
+    .bind(await seal(JSON.stringify(trip), "search_history.trip"), id, owner)
     .run();
 }
 export async function failSearch(
@@ -61,7 +62,7 @@ export async function failSearch(
     .prepare(
       "UPDATE search_history SET status='failed',error=? WHERE id=? AND owner=?",
     )
-    .bind(error.slice(0, 500), id, owner)
+    .bind(await seal(error.slice(0, 500), "search_history.error"), id, owner)
     .run();
 }
 export async function historyPage(
@@ -76,7 +77,7 @@ export async function historyPage(
     .bind(owner, offset)
     .all<HistoryRow>();
   return {
-    entries: rows.results.slice(0, 20).map(decode),
+    entries: await Promise.all(rows.results.slice(0, 20).map(decode)),
     hasMore: rows.results.length > 20,
   };
 }

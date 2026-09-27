@@ -8,6 +8,7 @@ import {
   ApiError,
 } from "@/lib/server/context";
 import { tripSchema } from "@/lib/trips/schema";
+import { seal, unsealJson } from "@/lib/server/vault";
 import { z } from "zod";
 export async function GET() {
   try {
@@ -19,7 +20,7 @@ export async function GET() {
       .bind(u.id)
       .all<{ payload: string }>();
     return Response.json(
-      { trips: rows.results.map((r) => JSON.parse(r.payload)) },
+      { trips: await Promise.all(rows.results.map((r) => unsealJson(r.payload, "trips.payload"))) },
       { headers: privateHeaders },
     );
   } catch (e) {
@@ -41,7 +42,7 @@ export async function POST(r: Request) {
       .bind(
         trip.id,
         u.id,
-        JSON.stringify(trip),
+        await seal(JSON.stringify(trip), "trips.payload"),
         new Date().toISOString(),
         u.id,
         trip.id,

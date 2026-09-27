@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, useSyncExternalStore } from "react";
+import { usePathname } from "next/navigation";
 
 // Google Analytics 4 with Consent Mode v2: cookieless, anonymous pings until the visitor accepts;
-// advertising storage is always denied. Page changes are tracked by GA's history-based page views.
+// advertising storage is always denied. Page views are sent here, one per route, with addresses cleaned by safeUrl().
 type Choice = "granted" | "denied";
 const KEY = "analytics-consent";
 const listeners = new Set<() => void>();
@@ -19,11 +20,21 @@ function choose(choice: Choice | null) {
 /** Re-opens the consent bar (for a "Cookie settings" link). */
 export const openCookieSettings = () => choose(null);
 const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l); }; };
+/**
+ * What Google may see of an address: the route only. Query strings (invite links carry a token that signs people in;
+ * trip IDs, checkout results) and share IDs stay on the site, and other sites' addresses are cut to their origin.
+ */
+export function safeUrl(href: string) {
+  const u = new URL(href, location.href);
+  return u.origin !== location.origin ? u.origin + "/" : u.origin + u.pathname.replace(/^\/share\/[^/]+/, "/share/:id");
+}
+let lastView: { doc: Document; page: string } | null = null; // this document's previous page view
 const tracked = () => typeof window !== "undefined" && process.env.NODE_ENV === "production" && !/^(localhost|127\.0\.0\.1|\[::1\])$|\.local$/.test(location.hostname);
 
 export function Analytics({ id, site, accent }: { id: string; site: string; accent: string }) {
   // "ssr" on the server and during hydration, so the bar only appears once the stored choice is known.
   const choice = useSyncExternalStore(subscribe, () => (tracked() ? read() ?? "ask" : "off"), () => "ssr");
+  const pathname = usePathname();
   useEffect(() => {
     if (!tracked() || window.gtag) return;
     window.dataLayer = window.dataLayer || [];
@@ -34,12 +45,21 @@ export function Analytics({ id, site, accent }: { id: string; site: string; acce
     };
     window.gtag("consent", "default", { ad_storage: "denied", ad_user_data: "denied", ad_personalization: "denied", analytics_storage: read() === "granted" ? "granted" : "denied" });
     window.gtag("js", new Date());
-    window.gtag("config", id);
+    window.gtag("config", id, { send_page_view: false });
     const s = document.createElement("script");
     s.async = true;
     s.src = `https://www.googletagmanager.com/gtag/js?id=${id}`;
     document.head.appendChild(s);
   }, [id]);
+  useEffect(() => {
+    if (!tracked() || !window.gtag) return;
+    const page = safeUrl(location.href);
+    const referrer = lastView?.doc === document ? lastView.page : document.referrer ? safeUrl(document.referrer) : "";
+    // "set" also covers GA's own events (scrolls, outbound clicks), which would otherwise report the raw address.
+    window.gtag("set", { page_location: page, page_referrer: referrer });
+    window.gtag("event", "page_view", { page_location: page, page_referrer: referrer, page_title: document.title });
+    lastView = { doc: document, page };
+  }, [pathname]);
   if (choice !== "ask") return null;
   const button = { padding: "9px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" } as const;
   return (

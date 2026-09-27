@@ -60,6 +60,7 @@ import { DestinationAdvice } from "@/components/trips/destination-advice";
 import { intakeSchema, type Trip, type Intake, type Itinerary } from "@/lib/trips/schema";
 import { consumePlannerStream, type Preview } from "@/lib/trips/stream";
 import { usePlus } from "@/components/trips/plus";
+import { api as callApi } from "@/lib/client/api";
 type DestinationSuggestion = { name: string; kind: "city" | "country" | "continent" };
 const interests = [
   { name: "Nature", icon: Leaf },
@@ -81,7 +82,7 @@ const initial: Intake = {
   homeCity: "",
 };
 async function api(url: string, options?: RequestInit) {
-  const r = await fetch(url, options);
+  const r = await callApi(url, options);
   const data = await r.json();
   if (!r.ok)
     throw new Error(data.error ?? "Something went wrong. Please try again.");
@@ -161,7 +162,7 @@ export function Workspace({
     const controller = new AbortController();
     const task = window.setTimeout(() => {
       if (view !== "plan" || query.length < 2) { setSuggestions([]); return; }
-      fetch("/api/destinations?query=" + encodeURIComponent(query), { signal: controller.signal })
+      callApi("/api/destinations?query=" + encodeURIComponent(query), { signal: controller.signal })
         .then((response) => response.ok ? response.json() : { suggestions: [] })
         .then((data) => { if (!controller.signal.aborted) setSuggestions(Array.isArray(data.suggestions) ? data.suggestions : []); })
         .catch(() => {});
@@ -252,7 +253,7 @@ export function Workspace({
     setPreview({});
     window.scrollTo({ top: 0, behavior: "smooth" });
     try {
-      const response = await fetch("/api/generate", {
+      const response = await callApi("/api/generate", {
         method: "POST",
         signal: controller.signal,
         headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
@@ -280,7 +281,7 @@ export function Workspace({
     dayRequest.current = controller;
     setRegenerating(index);
     try {
-      const response = await fetch("/api/regenerate", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trip: current, day: index }) });
+      const response = await callApi("/api/regenerate", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trip: current, day: index }) });
       const result = await response.json();
       if (!response.ok) throw Error(result.error ?? "Could not replace this day.");
       controller.signal.throwIfAborted();

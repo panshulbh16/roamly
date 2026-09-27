@@ -21,6 +21,8 @@
     { "pattern": "heyroamly.com", "custom_domain": true },
     { "pattern": "www.heyroamly.com", "custom_domain": true }
   ],
+  // Seals rows stored before DATA_ENCRYPTION_KEY was set (worker/index.ts, lib/server/backfill.ts).
+  "triggers": { "crons": ["*/15 * * * *"] },
   // Production database; CI applies drizzle/ migrations with `wrangler d1 migrations apply`.
   "d1_databases": [
     {

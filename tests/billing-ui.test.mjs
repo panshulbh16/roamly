@@ -29,7 +29,7 @@ function browser(search='',status={plus:false,until:0}){
  globalThis.window={location:{origin:'https://heyroamly.com',pathname:'/pricing',search},history:{state:{router:'kept'},replaceState(s,_,url){page.replaced={s,url};}},
   dispatchEvent(e){page.events.push(e);return true;},
   Razorpay:class{constructor(options){page.checkout=options;}open(){page.opened=true;}on(){}}};
- globalThis.fetch=async(url,options)=>{page.requests.push([url,options?.method??'GET']);
+ globalThis.fetch=async(url,options)=>{page.requests.push([url,options?.method??'GET']);assert.equal(new Headers(options?.headers).get('x-roamly-client'),'web','calls go through lib/client/api.ts');
   if(url==='/api/billing/status')return Response.json(status);
   if(url==='/api/billing/checkout')return Response.json({orderId:'order_abc',amount:49900,currency:'INR',keyId:'rzp_test_fixture',email:'buyer@example.test'});
   return Response.json({error:'unexpected '+url},{status:404});};

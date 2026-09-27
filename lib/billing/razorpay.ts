@@ -28,6 +28,10 @@ export async function membership(owner:string) { return db().prepare("SELECT * F
 export function hasPlus(row:SubscriptionRow|null) { return !!row && row.status==="active" && row.paid_count>0 && row.current_end>Math.floor(Date.now()/1000); }
 export async function createOrder(owner:string,currency:BillingCurrency) {
   const {amount}=PRICES[currency];
+  // Each checkout creates a Razorpay order; a daily cap keeps a script from flooding the account with them.
+  const attempt=await db().prepare("INSERT INTO usage (key,count) VALUES (?,1) ON CONFLICT(key) DO UPDATE SET count=count+1 WHERE count<20 RETURNING count")
+    .bind(`checkout:${owner}:${new Date().toISOString().slice(0,10)}`).first();
+  if(!attempt) throw new ApiError(429,"Too many checkout attempts today. Please try again tomorrow.");
   const order=await razorpay("orders",{amount,currency,receipt:"roamly-"+Date.now(),notes:{roamly_owner:owner,plan:"plus"}});
   if(!/^order_[a-zA-Z0-9]+$/.test(order.id??"")) throw new ApiError(502,"Could not prepare checkout. Please try again.");
   await db().prepare("INSERT INTO orders (id,owner,amount,currency) VALUES (?,?,?,?)").bind(order.id,owner,amount,currency).run();

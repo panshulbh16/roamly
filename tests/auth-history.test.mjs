@@ -461,6 +461,17 @@ test('Razorpay Plus pass: currency by country, verified callback and webhook, id
     await assert.rejects(()=>app.planner.reserveUsage('free-subscriber'),e=>e.status===429);
     sql.prepare("UPDATE subscriptions SET current_end=? WHERE owner='subscriber'").run(now()-1);
     assert.equal(app.billing.hasPlus(await app.billing.membership('subscriber')),false);
+    // Checkout and status need the signed-in app itself; checkouts are capped per day; other webhook events grant nothing.
+    const foreign=withCountry('IN');foreign.headers.set('origin','https://evil.test');assert.equal((await app.checkout.POST(foreign)).status,403);
+    context.headers=new Headers();assert.equal((await app.checkout.POST(withCountry('IN'))).status,401);assert.equal((await app.billingStatus.GET()).status,401);
+    user('checkout-spammer');const tries=[];for(let i=0;i<21;i++)tries.push((await app.checkout.POST(withCountry('IN'))).status);
+    assert.deepEqual([tries.filter(s=>s===200).length,tries.at(-1)],[20,429],'the 21st checkout in a day is refused');
+    const other=await (async()=>{user('webhook-other');return (await app.checkout.POST(withCountry('IN'))).json();})();
+    const captured=JSON.stringify({event:'payment.captured',payload:{order:{entity:{id:other.orderId}},payment:{entity:{id:'pay_x'}}}});
+    assert.equal((await app.webhook.POST(await hook(captured))).status,200);assert.equal(app.billing.hasPlus(await app.billing.membership('webhook-other')),false,'only order.paid grants');
+    assert.equal((await app.webhook.POST(await hook(JSON.stringify({event:'order.paid',payload:{order:{entity:{id:'order_unknown'}},payment:{entity:{id:'pay_y'}}}})))).status,200);
+    assert.equal(sql.prepare("SELECT count(*) n FROM subscriptions WHERE subscription_id='order_unknown'").get().n,0,'a signed event for an order Roamly never created grants nothing');
+    user('subscriber');
     delete context.env.RAZORPAY_ENABLED;assert.equal((await app.checkout.POST(withCountry('IN'))).status,503);
   }finally{globalThis.fetch=original;for(const key of Object.keys(settings))delete context.env[key];}
 });
@@ -492,7 +503,11 @@ test('Travel Together: Plus hosting, private drafts, requests, capacity and life
     assert.equal((await (await get()).json()).trip.meeting,undefined);
     user('together-two');assert.equal((await post('join',{name:'Two',message:'Would love to join you'})).status,200);
     user('together-host');let detail=await (await get()).json();assert.equal(detail.requests.length,2);
-    const approvals=await Promise.all([post('approve',{member:'together-one'}),post('approve',{member:'together-two'})]);assert.deepEqual(approvals.map(r=>r.status).sort(),[200,409]);
+    // Hosts get a per-trip handle for each traveller, never their account ID, and only handles are accepted.
+    assert.ok(!JSON.stringify(detail).includes('together-one')&&!JSON.stringify(detail).includes('together-two'));
+    const handles=Object.fromEntries(detail.requests.map(q=>[q.name==='One'?'together-one':'together-two',q.member]));assert.match(handles['together-one'],/^[0-9a-f]{32}$/);
+    assert.equal((await post('approve',{member:'together-one'})).status,400,'raw account IDs are refused');
+    const approvals=await Promise.all([post('approve',{member:handles['together-one']}),post('approve',{member:handles['together-two']})]);assert.deepEqual(approvals.map(r=>r.status).sort(),[200,409]);
     const approved=sql.prepare("SELECT member FROM outing_requests WHERE trip_id=? AND status='approved'").get(id).member;
     // Published trips are editable; everyone who requested or joined is told, and places can't drop below approvals.
     sql.prepare("INSERT INTO subscriptions (owner,status,current_end,paid_count) VALUES ('together-stranger','active',?,1)").run(Math.floor(Date.now()/1000)+86400);
@@ -505,10 +520,10 @@ test('Travel Together: Plus hosting, private drafts, requests, capacity and life
     assert.equal((await post('report',{reason:'A concern that should stay private'})).status,200);assert.equal(sql.prepare('SELECT count(*) n FROM outing_reports WHERE trip_id=?').get(id).n,1);
     user('together-host');sql.prepare("UPDATE subscriptions SET current_end=0 WHERE owner='together-host'").run();
     assert.equal((await post('meeting',{meeting:'Updated private note'})).status,200,'expired host can coordinate');
-    assert.equal((await post('remove',{member:approved})).status,200,'expired host can remove');
+    assert.equal((await post('remove',{member:handles[approved]})).status,200,'expired host can remove');
     user(approved);assert.equal((await (await get()).json()).trip.meeting,undefined);
     user('together-host');assert.equal((await post('close')).status,200);assert.equal((await post('publish')).status,403,'expired host cannot republish');
-    const other=approved==='together-one'?'together-two':'together-one';assert.equal((await post('approve',{member:other})).status,409);
+    const other=approved==='together-one'?'together-two':'together-one';assert.equal((await post('approve',{member:handles[other]})).status,409);
     assert.equal((await post('cancel')).status,200);assert.equal((await (await get()).json()).trip.status,'cancelled');
     user('together-host');sql.prepare("UPDATE subscriptions SET current_end=? WHERE owner='together-host'").run(Math.floor(Date.now()/1000)+86400);assert.equal((await post('save',{trip})).status,409,'cancelled trips cannot be edited');
     user(other);assert.equal((await post('withdraw')).status,200);assert.equal((await (await get()).json()).trip.requestStatus,'withdrawn');
@@ -529,7 +544,9 @@ test('Together: publish straight from the editor with only the basics',async()=>
   } finally {sql.prepare('DELETE FROM outings WHERE id=?').run(id);sql.prepare("DELETE FROM subscriptions WHERE owner='quick-host'").run();context.headers=new Headers();}
 });
 
-test('Together email invites: host-only, hold places, sign the guest in once and add them to the trip',async()=>{
+const SEAL_KEY=Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64');
+for(const sealed of [false,true])test(`Together email invites${sealed?' with data sealed at rest':''}: host-only, hold places, sign the guest in once and add them to the trip`,async()=>{
+  if(sealed)context.env.DATA_ENCRYPTION_KEY=SEAL_KEY;
   const id=crypto.randomUUID(), date=new Date(Date.now()+86400000).toISOString().slice(0,10), original=globalThis.fetch;
   const trip={id,title:'Lake weekend <b>',hostName:'Ana',city:'Delhi',destination:'Nainital',startDate:date,capacity:2,summary:'',cost:0,days:[],meeting:'Meet at gate 2'};
   const post=(action,extra={})=>app.together.POST(req('/api/together',{action,id,...extra}));
@@ -567,12 +584,18 @@ test('Together email invites: host-only, hold places, sign the guest in once and
     assert.ok([...jar.keys()].some(k=>k.startsWith('sb-')),'the guest is signed in');assert.equal(jar.get('roamly-auth-provider').value,'supabase');
     assert.equal(sql.prepare("SELECT count(*) n FROM notifications WHERE recipient='invite-host' AND trip_id=? AND type='invite_accepted'").get(id).n,1);
     assert.equal((await accept(tokenFor('a@x.test'))).status,409,'each link works once');
-    sql.prepare("UPDATE outing_invites SET expires_at=1 WHERE trip_id=? AND email='b@x.test'").run(id);
+    if(sealed){
+      const stored=sql.prepare('SELECT email,email_key FROM outing_invites WHERE trip_id=?').all(id);
+      assert.ok(stored.every(r=>r.email.startsWith('enc1:')&&r.email_key.startsWith('k1:')),'invite emails are sealed, matched by keyed hash');
+      assert.ok(!JSON.stringify(sql.prepare('SELECT * FROM outing_requests WHERE trip_id=?').all(id)).includes('Joined by invitation'),'join details are sealed');
+      assert.ok(sql.prepare('SELECT payload FROM outings WHERE id=?').get(id).payload.startsWith('enc1:'));
+    }
+    sql.prepare("UPDATE outing_invites SET expires_at=1 WHERE trip_id=? AND email_key=?").run(id,await app.vault.lookupKey('b@x.test'));
     assert.equal((await accept(tokenFor('b@x.test'))).status,409,'expired links are refused');
     jar.clear();user('invite-host');mails.length=0;assert.equal((await (await post('invite',{emails:['a@x.test','b@x.test']})).json()).sent,1,'joined guests are not re-invited; expired ones get a fresh link');
     context.headers=new Headers();jar.clear();assert.equal((await accept(tokenFor('b@x.test'))).status,200,'resent link works');
   } finally {
-    globalThis.fetch=original;for(const k of Object.keys(settings))delete context.env[k];jar.clear();context.headers=new Headers();
+    globalThis.fetch=original;for(const k of Object.keys(settings))delete context.env[k];delete context.env.DATA_ENCRYPTION_KEY;jar.clear();context.headers=new Headers();
     for(const t of ['notifications','outing_invites','outing_requests'])sql.prepare(`DELETE FROM ${t} WHERE trip_id=?`).run(id);
     sql.prepare('DELETE FROM outings WHERE id=?').run(id);sql.prepare("DELETE FROM subscriptions WHERE owner='invite-host'").run();
   }
@@ -607,4 +630,64 @@ test('notification API isolates accounts, pages tied timestamps and marks read i
   assert.equal((await(await get()).json()).unreadCount,24);
   user('notify-bob');assert.equal((await(await get()).json()).items.length,1);
  }finally{sql.exec("DELETE FROM notifications WHERE recipient IN ('notify-alice','notify-bob')");context.headers=new Headers();}
+});
+
+test('personal data is sealed at rest, served in the clear, and old plaintext rows are sealed without side effects',async()=>{
+  const trip=structuredClone(app.sample.sampleTrip);trip.id=crypto.randomUUID();trip.intake.needs='PRIVATE: wheelchair access';
+  const outing=crypto.randomUUID(), legacyTrip=crypto.randomUUID(), date=new Date(Date.now()+86400000).toISOString().slice(0,10);
+  const plan={id:outing,title:'Sealed trip',hostName:'Hosted',city:'Delhi',destination:'Agra',startDate:date,capacity:3,summary:'Secret summary',cost:0,days:['Day one'],meeting:'PRIVATE meeting point'};
+  const together=(action,extra={})=>app.together.POST(req('/api/together',{action,id:outing,...extra}));
+  const raw=(q,...a)=>JSON.stringify(sql.prepare(q).all(...a));
+  sql.prepare("INSERT INTO subscriptions (owner,status,current_end,paid_count) VALUES ('seal-host','active',?,1)").run(Math.floor(Date.now()/1000)+86400);
+  try{
+    // No key: nothing changes, and a value that merely looks sealed still round-trips.
+    assert.equal(await app.vault.seal('plain','t.f'),'plain');
+    assert.equal(await app.vault.unseal(await app.vault.seal('enc1:not really','t.f'),'t.f'),'enc1:not really');
+    context.env.DATA_ENCRYPTION_KEY='too-short';await assert.rejects(()=>app.vault.seal('x','t.f'),e=>e.status===503,'a malformed key fails closed');
+    context.env.DATA_ENCRYPTION_KEY=SEAL_KEY;
+    const box=await app.vault.seal('hello','t.f');assert.match(box,/^enc1:/);assert.equal(await app.vault.seal('hello','t.f'),box,'deterministic, so unchanged data keeps its ciphertext');
+    assert.notEqual(await app.vault.seal('hello','t.g'),box);assert.equal(await app.vault.unseal(box,'t.f'),'hello');
+    await assert.rejects(()=>app.vault.unseal(box,'t.g'),e=>e.status===503,'bound to its column');
+    await assert.rejects(()=>app.vault.unseal(box.slice(0,-2)+(box.endsWith('A')?'B':'A')+box.slice(-1),'t.f'),e=>e.status===503,'tampering is detected');
+    // Saved trips, share snapshots, search history and the waitlist are ciphertext in D1 but whole through the API.
+    user('seal-owner');
+    assert.equal((await app.trips.POST(req('/api/trips',trip))).status,200);
+    assert.ok(!raw('SELECT payload FROM trips WHERE id=?',trip.id).includes('PRIVATE'));
+    assert.equal((await (await app.trips.GET()).json()).trips.find(t=>t.id===trip.id).intake.needs,trip.intake.needs);
+    const share=await (await app.shares.POST(req('/api/shares',trip))).json();
+    assert.match(sql.prepare('SELECT payload FROM trip_shares WHERE id=?').get(share.id).payload,/^enc1:/);
+    const search=await app.repository.startSearch(context.env.DB,'seal-owner',trip.intake);await app.repository.completeSearch(context.env.DB,'seal-owner',search,trip);
+    assert.ok(!raw('SELECT intake,trip FROM search_history WHERE id=?',search).includes('PRIVATE'));
+    assert.equal((await app.repository.findSearch(context.env.DB,'seal-owner',search)).intake.needs,trip.intake.needs);
+    assert.equal((await app.waitlist.POST(req('/api/waitlist',{}))).status,200);
+    assert.match(sql.prepare("SELECT email FROM waitlist WHERE owner='seal-owner'").get().email,/^enc1:/);
+    // Together: plan, meeting point and join requests are sealed; unchanged re-saves don't notify anyone.
+    user('seal-host');assert.equal((await together('save',{trip:plan,publish:true})).status,200);
+    user('seal-guest');assert.equal((await together('join',{name:'Guest Name',message:'PRIVATE hello there'})).status,200);
+    assert.ok(!raw('SELECT * FROM outings WHERE id=?',outing).match(/Secret|PRIVATE/)&&!raw('SELECT * FROM outing_requests WHERE trip_id=?',outing).match(/Guest|PRIVATE/));
+    user('seal-host');const view=await (await app.together.GET(req('/api/together?id='+outing,undefined,'GET'))).json();
+    assert.equal(view.trip.summary,'Secret summary');assert.equal(view.trip.meeting,plan.meeting);assert.equal(view.requests[0].name,'Guest Name');
+    const notes=()=>sql.prepare('SELECT count(*) n FROM notifications WHERE trip_id=? AND type IN (?,?)').get(outing,'trip_updated','meeting_updated').n;
+    assert.equal((await together('save',{trip:plan})).status,200);assert.equal(notes(),0,'re-saving the same trip is not an update');
+    assert.equal((await together('save',{trip:{...plan,summary:'Changed'}})).status,200);assert.equal(notes(),1,'a real edit still notifies');
+    // Rows stored before the key existed stay readable, and the sweep seals them silently.
+    sql.prepare("INSERT INTO trips (id,owner,payload,created_at) VALUES (?,'seal-owner',?,?)").run(legacyTrip,JSON.stringify({...trip,id:legacyTrip}),new Date().toISOString());
+    sql.prepare('UPDATE outings SET payload=?,meeting=? WHERE id=?').run(JSON.stringify({...plan,summary:'Legacy'}),'Legacy meeting',outing);
+    sql.prepare("INSERT INTO outing_invites (id,trip_id,email,token_hash,created_at,expires_at) VALUES (?,?,'legacy@x.test','h',?,?)").run(crypto.randomUUID(),outing,new Date().toISOString(),Math.floor(Date.now()/1000)+3600);
+    user('seal-owner');assert.ok((await (await app.trips.GET()).json()).trips.some(t=>t.id===legacyTrip));
+    const before=notes();let swept=0,batch=0,runs=0;
+    do{batch=await app.backfill.sealLegacyData();swept+=batch;}while(batch>0&&++runs<100);
+    assert.ok(swept>=4);assert.equal(batch,0,'batches continue until nothing is left');assert.equal(notes(),before,'sealing old rows notifies no one');
+    for(const [t,c] of [['trips','payload'],['outings','payload'],['outings','meeting'],['outing_invites','email']])
+      assert.equal(sql.prepare(`SELECT count(*) n FROM ${t} WHERE ${c} NOT LIKE 'enc1:%'`).get().n,0,`${t}.${c} fully sealed`);
+    assert.match(sql.prepare('SELECT email_key FROM outing_invites WHERE trip_id=?').get(outing).email_key,/^k1:/);
+    user('seal-host');assert.equal((await (await app.together.GET(req('/api/together?id='+outing,undefined,'GET'))).json()).trip.meeting,'Legacy meeting');
+    // Losing the key makes sealed data unavailable rather than wrong.
+    delete context.env.DATA_ENCRYPTION_KEY;user('seal-owner');assert.equal((await app.trips.GET()).status,503);
+  } finally {
+    delete context.env.DATA_ENCRYPTION_KEY;context.headers=new Headers();
+    for(const q of ["DELETE FROM trips WHERE owner='seal-owner'","DELETE FROM trip_shares WHERE owner='seal-owner'","DELETE FROM search_history WHERE owner='seal-owner'","DELETE FROM waitlist WHERE owner='seal-owner'","DELETE FROM subscriptions WHERE owner='seal-host'"])sql.exec(q);
+    for(const t of ['notifications','outing_invites','outing_requests'])sql.prepare(`DELETE FROM ${t} WHERE trip_id=?`).run(outing);
+    sql.prepare('DELETE FROM outings WHERE id=?').run(outing);
+  }
 });

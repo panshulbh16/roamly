@@ -22,6 +22,8 @@ Tests mock external services; the live planner suite is skipped unless explicitl
 | Mobile hook | `mobile`: breakpoint boundaries, media-query callback and cleanup using an isolated hook fixture |
 | Workspace, history, sign-in and app shell | `screens`, `navigation`: initial states, navigation, required controls and rendered escaping |
 | Cost, advice, carousel and stay components | `cost`, `ui-components`: rendered controls, links, legacy data and accessibility attributes |
+| Encryption at rest | `auth-history`: sealed storage for every personal column, plaintext compatibility, lookup keys, legacy sweep without notifications, tamper and missing-key failures |
+| API gate, security headers and analytics privacy | `worker-cache`, `analytics`, `billing-ui`: only app calls reach `/api/`, path-encoding bypasses, HSTS/framing headers, no tokens or IDs sent to Google Analytics |
 | Build and emitted assets | `build-command`, `rendered-html`, `ui-components`: build tooling and output contracts |
 
 Names in the table refer to `.test.mjs` files unless an extension is given. This is a module inventory, not a claim of 100% statement or branch coverage. Type-only modules have no runtime behavior. Bundled third-party UI primitives are exercised through the application; their complete upstream suites are not duplicated here.

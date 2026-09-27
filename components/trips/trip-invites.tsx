@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { Mail, Send } from "lucide-react";
+import { api } from "@/lib/client/api";
 
 export type TripInvite = { email: string; status: "sent" | "accepted" | "expired" };
 const LABEL = { sent: "Invited", accepted: "Joined", expired: "Expired" } as const;
@@ -10,7 +11,7 @@ export function TripInvites({ tripId, status, invites, onSent }: { tripId: strin
   async function invite(emails: string[]) {
     setBusy(true); setError("");
     try {
-      const r = await fetch("/api/together", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "invite", id: tripId, emails }) });
+      const r = await api("/api/together", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "invite", id: tripId, emails }) });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error ?? "Couldn’t send invites. Try again.");
       setText(""); onSent(data.sent ?? 0);

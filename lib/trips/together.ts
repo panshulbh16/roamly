@@ -14,3 +14,8 @@ export type OutingInput = z.infer<typeof outingSchema>;
 export type Outing = Omit<OutingInput,"meeting"> & {status:string;isHost:boolean;approved:number;requestStatus:string|null;meeting?:string};
 export type JoinRequest = {member:string;name:string;message:string;status:string};
 export function upcoming(date:string) { return date >= new Date().toISOString().slice(0,10); }
+/** Hosts see this per-trip stand-in for each traveller, never their account ID. */
+export async function travellerHandle(tripId:string, member:string) {
+  const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(tripId+"\n"+member));
+  return Array.from(new Uint8Array(digest).slice(0,16),b=>b.toString(16).padStart(2,"0")).join("");
+}

@@ -3,6 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { ArrowRight, CalendarDays, MapPin, MailCheck, UsersRound } from "lucide-react";
 import { TripFooter } from "./footer";
+import { api } from "@/lib/client/api";
 
 type TripSummary = { title: string; hostName: string; city: string; destination: string; startDate: string; days: number };
 const dateLabel = (d: string) => new Date(d + "T12:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
@@ -12,7 +13,7 @@ export function InviteCard({ token, problem, email, tripId, trip }: { token: str
   async function join() {
     setBusy(true); setError("");
     try {
-      const r = await fetch("/api/together/invite", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }) });
+      const r = await api("/api/together/invite", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }) });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error ?? "Couldn’t join the trip. Try again.");
       window.location.assign(data.redirectTo);

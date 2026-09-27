@@ -4,6 +4,7 @@ import { authCookieOptions } from "@/lib/auth/config";
 import { requiredClient } from "@/lib/auth/requests";
 import { ApiError, body, db, failure, privateHeaders, sameOrigin } from "@/lib/server/context";
 import { findInvite, inviteProblem, invitesReady, signInAs } from "@/lib/trips/invites";
+import { seal } from "@/lib/server/vault";
 
 // Accepting is a POST from the invite page, so link-scanning bots that prefetch email links can't use it up.
 export async function POST(r: Request) {
@@ -23,7 +24,7 @@ export async function POST(r: Request) {
     const joined = await db().prepare(`INSERT INTO outing_requests (trip_id,member,name,message,status,created_at)
       SELECT ?,?,?,?,'approved',? WHERE (SELECT count(*) FROM outing_requests WHERE trip_id=? AND status='approved' AND member<>?)<(SELECT capacity FROM outings WHERE id=?)
       ON CONFLICT(trip_id,member) DO UPDATE SET status='approved' RETURNING member`)
-      .bind(invite!.trip, member, invite!.email.split("@")[0].slice(0, 60), "Joined by invitation from the host.", new Date().toISOString(), invite!.trip, member, invite!.trip).first();
+      .bind(invite!.trip, member, await seal(invite!.email.split("@")[0].slice(0, 60), "outing_requests.name"), await seal("Joined by invitation from the host.", "outing_requests.message"), new Date().toISOString(), invite!.trip, member, invite!.trip).first();
     if (!joined) throw new ApiError(409, "You’re signed in, but this trip is now full. Ask the host to make room.");
     await db().prepare("UPDATE outing_invites SET status='accepted',member=? WHERE id=? AND status='sent'").bind(member, invite!.id).run();
     return Response.json({ redirectTo: "/together?trip=" + invite!.trip }, { headers: privateHeaders });

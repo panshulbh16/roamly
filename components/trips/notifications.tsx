@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Bell } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { api } from "@/lib/client/api";
 
 type Notice = { id:string; tripId:string; type:string; createdAt:string; readAt:string|null };
 type Page = { items:Notice[]; unreadCount:number; nextCursor:string|null };
@@ -33,7 +34,7 @@ export function Notifications() {
     if(!current || current.busy) return;
     current.busy=true;setBusy(true);
     try {
-      const data:Page=await fetch("/api/notifications"+(after?"?cursor="+encodeURIComponent(after):""),{cache:"no-store",signal:current.controller.signal}).then(response);
+      const data:Page=await api("/api/notifications"+(after?"?cursor="+encodeURIComponent(after):""),{cache:"no-store",signal:current.controller.signal}).then(response);
       if(session.current!==current)return;
       setItems(previous=>{
         if(!after)return data.items;
@@ -61,7 +62,7 @@ export function Notifications() {
     const current=session.current;if(!current||current.busy)return;
     current.busy=true;setBusy(true);setError("");
     try {
-      await fetch('/api/notifications',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id}),signal:current.controller.signal}).then(response);
+      await api('/api/notifications',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id}),signal:current.controller.signal}).then(response);
       if(session.current!==current)return;
       setItems(previous=>previous.map(n=>n.id===id?{...n,readAt:new Date().toISOString()}:n));
       setUnread(n=>n===null?null:Math.max(0,n-1));
