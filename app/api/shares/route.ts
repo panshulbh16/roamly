@@ -2,6 +2,7 @@ import { z } from "zod";
 import { body, db, failure, identity, privateHeaders, sameOrigin, ApiError } from "@/lib/server/context";
 import { tripSchema } from "@/lib/trips/schema";
 import { shareSnapshot } from "@/lib/trips/share";
+import { seal } from "@/lib/server/vault";
 const idSchema = z.string().uuid();
 export async function GET(r: Request) {
   try {
@@ -22,7 +23,7 @@ export async function POST(r: Request) {
     const trip = parsed.data;
     const id = crypto.randomUUID();
     const created = await db().prepare("INSERT INTO trip_shares (id,owner,trip_id,payload) SELECT ?,?,?,? WHERE (SELECT count(*) FROM trip_shares WHERE owner=?)<100 RETURNING id")
-      .bind(id,user.id,trip.id,JSON.stringify(shareSnapshot(trip)),user.id).first();
+      .bind(id,user.id,trip.id,await seal(JSON.stringify(shareSnapshot(trip)),"trip_shares.payload"),user.id).first();
     if (!created) throw new ApiError(409,"Revoke an old share link before creating another.");
     return Response.json({id,path:`/share/${id}`},{headers:privateHeaders});
   } catch(e) { return failure(e); }

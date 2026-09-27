@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import Link from "next/link";
 import { CalendarPlus, Check, Sparkles, UsersRound, Wand2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { api } from "@/lib/client/api";
 
 export type PlusStatus = { plus: boolean; until: number };
 const EVENT = "roamly:plus";
@@ -24,7 +25,7 @@ export function PlusProvider({ signedIn, children }: { signedIn: boolean; childr
   useEffect(() => {
     if (!signedIn) { cached = null; return; }
     let active = true;
-    if (!cached) fetch("/api/billing/status").then(r => r.ok ? r.json() : null).then(s => {
+    if (!cached) api("/api/billing/status").then(r => r.ok ? r.json() : null).then(s => {
       if (active && s) { cached = { plus: !!s.plus, until: s.until ?? 0 }; setStatus(cached); }
     }).catch(() => {});
     const onPlus = (e: Event) => { setStatus((e as CustomEvent<PlusStatus>).detail); setCelebrate(true); };

@@ -25,3 +25,6 @@ export * as webhook from "../app/api/billing/webhook/route";
 export * as together from "../app/api/together/route";
 export * as inviteAccept from "../app/api/together/invite/route";
 export * as notifications from "../app/api/notifications/route";
+export * as vault from "../lib/server/vault";
+export * as backfill from "../lib/server/backfill";
+export * as invites from "../lib/trips/invites";

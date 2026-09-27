@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { announcePlus } from "./plus";
+import { api } from "@/lib/client/api";
 type Status={plus:boolean;until:number;usage?:{limit:number;used:number;remaining:number;resetsAt:string}};
 type Order={orderId:string;amount:number;currency:string;keyId:string;email?:string};
 type Razorpay=new(options:object)=>{open():void;on(event:"payment.failed",cb:(r:{error:{description:string}})=>void):void};
@@ -22,7 +23,7 @@ const loadCheckout=()=>new Promise<Razorpay>((resolve,reject)=>{
 });
 export function BillingControls({ price = "₹499" }: { price?: string }) {
   const [status,setStatus]=useState<Status|null>(null),[busy,setBusy]=useState(false),[message,setMessage]=useState("");
-  async function request(path:string,method="GET") {const r=await fetch("/api/billing/"+path,{method});const data=await r.json();if(!r.ok)throw Error(data.error??"Could not update your membership.");return data;}
+  async function request(path:string,method="GET") {const r=await api("/api/billing/"+path,{method});const data=await r.json();if(!r.ok)throw Error(data.error??"Could not update your membership.");return data;}
   useEffect(()=>{let active=true;const outcome=new URLSearchParams(window.location.search).get("checkout");
     request("status").then(s=>{if(!active)return;setStatus(s);if(!outcome)return;
       window.history.replaceState(window.history.state,"",window.location.pathname); // a reload must not replay the result

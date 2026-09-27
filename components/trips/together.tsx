@@ -6,9 +6,10 @@ import { type Outing, type OutingInput, type JoinRequest } from "@/lib/trips/tog
 import { TripFooter } from "./footer";
 import { TripEditor, type EditorMode } from "./together-editor";
 import { TripInvites, type TripInvite } from "./trip-invites";
+import { api as callApi } from "@/lib/client/api";
 const blank=(hostName=""):OutingInput=>({id:crypto.randomUUID(),title:"",hostName,city:"",destination:"",startDate:"",capacity:3,summary:"",cost:0,days:[""],meeting:""});
 async function api(path:string, data?:unknown){
-  const r=await fetch('/api/together'+path,data?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}:{cache:'no-store'});
+  const r=await callApi('/api/together'+path,data?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}:{cache:'no-store'});
   const json=await r.json(); if(!r.ok) throw Error(json.error??'Unable to load trips. Try again.'); return json;
 }
 const dateLabel=(date:string)=>new Date(date+'T12:00:00').toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { BillingControls } from "./billing";
 import { TripFooter } from "./footer";
+import { api } from "@/lib/client/api";
 export function Pricing({ signedIn, billingEnabled = false, price = "₹499" }: { signedIn: boolean; billingEnabled?: boolean; price?: string }) {
   const [busy, setBusy] = useState(false);
   const [joined, setJoined] = useState(false);
@@ -66,7 +67,7 @@ export function Pricing({ signedIn, billingEnabled = false, price = "₹499" }: 
                 onClick={async () => {
                   setBusy(true);
                   try {
-                    const response = await fetch("/api/waitlist", { method: "POST" });
+                    const response = await api("/api/waitlist", { method: "POST" });
                     const data = await response.json();
                     if (!response.ok) throw new Error(data.error ?? "Something went wrong. Please try again.");
                     setJoined(true);

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Backpack, Armchair, Gem, ArrowLeft } from "lucide-react";
 import { bands, browserCurrency, costInputSchema, costUrl, currencies, destinationBand, estimateCost, styles, validRate, dailyAllowances, type Journey, type DailyAllowances, type CostBand, type CostInput } from "@/lib/trips/cost";
+import { api } from "@/lib/client/api";
 const icons = { Budget: Backpack, Comfort: Armchair, Luxury: Gem };
 export function BudgetSelector({ value, onChange }: { value: CostInput["budget"]; onChange: (value: CostInput["budget"]) => void }) {
   return <section className="trip-cost-entry" aria-label="Travel budget">
@@ -68,7 +69,7 @@ export function CostBreakdown({ input, initialBand, embedded = false }: { input:
   useEffect(() => {
     if (destinationBand(input.destination).country) return;
     const controller = new AbortController();
-    fetch("/api/destinations?" + new URLSearchParams({ query: input.destination }), { signal: controller.signal })
+    api("/api/destinations?" + new URLSearchParams({ query: input.destination }), { signal: controller.signal })
       .then(r => r.ok ? r.json() : null)
       .then(data => { if (!controller.signal.aborted && data?.resolved?.name) setResolved({ query: input.destination, name: data.resolved.name }); })
       .catch(() => { /* Keep the explicitly labeled generic allowance available. */ });
@@ -107,7 +108,7 @@ function ResolvedCostBreakdown({ input, initialBand, embedded }: { input: CostIn
     if (!ready) return;
     const controller = new AbortController();
     if (currency === estimate.currency) return;
-    fetch("/api/currency?" + new URLSearchParams({ base: estimate.currency, currency }), { signal: controller.signal })
+    api("/api/currency?" + new URLSearchParams({ base: estimate.currency, currency }), { signal: controller.signal })
       .then(async response => { const data = await response.json(); if (!response.ok) throw new Error(data.error); return data; })
       .then(data => {
         if (!validRate({ ...data, quote: data.currency }, currency, estimate.currency)) throw new Error("Invalid exchange rate.");

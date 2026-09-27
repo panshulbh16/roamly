@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { z } from "zod";
 import { db } from "@/lib/server/context";
+import { unsealJson } from "@/lib/server/vault";
 import type { SharedTrip } from "@/lib/trips/share";
 import { PrintTrip } from "@/components/trips/print-trip";
 export const dynamic = "force-dynamic";
@@ -12,7 +13,7 @@ export default async function Page({params}:{params:Promise<{id:string}>}) {
   if(z.string().uuid().safeParse(id).success) {
     try {
       const row = await db().prepare("SELECT payload FROM trip_shares WHERE id=?").bind(id).first<{payload:string}>();
-      if(row) trip = JSON.parse(row.payload);
+      if(row) trip = await unsealJson<SharedTrip>(row.payload,"trip_shares.payload");
     } catch { unavailable=true; }
   }
   if(!trip) return <main className="workspace"><h1>{unavailable ? "Trip temporarily unavailable" : "This share link is unavailable"}</h1><p>{unavailable ? "Please try again shortly." : "It may have been revoked. Ask the sender for a new link."}</p><Link href="/">Plan your own trip</Link></main>;

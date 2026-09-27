@@ -14,6 +14,7 @@ import {
   InputOTPSlot,
 } from "@/components/ui/input-otp";
 import { safeReturnTo } from "@/lib/auth/policy";
+import { api } from "@/lib/client/api";
 export function SignIn({
   enabled,
   user,
@@ -37,7 +38,7 @@ export function SignIn({
       : "",
   );
   async function post(path: string, data: unknown) {
-    const r = await fetch(path, {
+    const r = await api(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),

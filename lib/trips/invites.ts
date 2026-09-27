@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { authConfig } from "@/lib/auth/config";
 import { ApiError, db } from "@/lib/server/context";
 import { upcoming } from "@/lib/trips/together";
+import { lookupKey, seal, stale, unseal } from "@/lib/server/vault";
 
 const config = () => env as unknown as Record<string, string | undefined>;
 export const INVITE_DAYS = 14;
@@ -57,8 +58,17 @@ export async function signInAs(email: string, client: { auth: { verifyOtp: (p: {
 
 type Invite = { id: string; email: string; status: string; expires_at: number; trip: string; owner: string; trip_status: string; start_date: string };
 export async function findInvite(token: string) {
-  return db().prepare(`SELECT i.id,i.email,i.status,i.expires_at,o.id trip,o.owner,o.status trip_status,o.start_date,o.payload
+  const row = await db().prepare(`SELECT i.id,i.email,i.status,i.expires_at,o.id trip,o.owner,o.status trip_status,o.start_date,o.payload
     FROM outing_invites i JOIN outings o ON o.id=i.trip_id WHERE i.token_hash=?`).bind(await sha256(token)).first<Invite & { payload: string }>();
+  return row && { ...row, email: await unseal(row.email, "outing_invites.email"), payload: await unseal(row.payload, "outings.payload") };
+}
+/** Re-seals a trip's invites written before the current key, so their lookup keys compare correctly. */
+export async function refreshInvites(tripId: string) {
+  const rows = (await db().prepare("SELECT id,email,email_key FROM outing_invites WHERE trip_id=?").bind(tripId).all<{ id: string; email: string; email_key: string | null }>()).results;
+  for (const r of rows) if (stale(r.email, r.email_key)) {
+    const email = await unseal(r.email, "outing_invites.email");
+    await db().prepare("UPDATE outing_invites SET email=?,email_key=? WHERE id=?").bind(await seal(email, "outing_invites.email"), await lookupKey(email), r.id).run();
+  }
 }
 export function inviteProblem(invite: Invite | null) {
   if (!invite) return "This invite link isn’t valid. Check you used the whole link from the email.";

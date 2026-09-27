@@ -8,7 +8,7 @@ const dir=mkdtempSync(join(process.cwd(),'.unit-together-')),state=[],refs=[];
 let cursor=0,refCursor=0;
 globalThis.__togetherHooks={useState(initial){const i=cursor++;if(!(i in state))state[i]=initial;return[state[i],v=>{state[i]=typeof v==='function'?v(state[i]):v;}];},useRef(initial){return refs[refCursor++]??=( {current:initial});}};
 const compiled=await build({entryPoints:['components/trips/together.tsx'],bundle:true,write:false,format:'esm',platform:'node',packages:'external',plugins:[{name:'hooks',setup(b){
- b.onResolve({filter:/^next\/link$/},()=>({path:'next/link.js',external:true}));
+ b.onResolve({filter:/^next\/(link|navigation)$/},a=>({path:a.path+'.js',external:true}));
  b.onResolve({filter:/^react$/},()=>({path:'react',namespace:'fixture'}));
  b.onLoad({filter:/.*/,namespace:'fixture'},()=>({loader:'js',resolveDir:process.cwd(),contents:`export * from ${JSON.stringify(join(process.cwd(),'node_modules/react/index.js'))};export const useState=globalThis.__togetherHooks.useState;export const useRef=globalThis.__togetherHooks.useRef;export const useEffect=()=>{};`}));
 }}]});

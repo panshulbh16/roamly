@@ -19,6 +19,7 @@ import {
   AlertDialogAction,
 } from "@/components/ui/alert-dialog";
 import type { HistoryEntry } from "@/lib/history/types";
+import { api } from "@/lib/client/api";
 export function HistoryView() {
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [busy, setBusy] = useState(true);
@@ -29,7 +30,7 @@ export function HistoryView() {
     setBusy(true);
     setError("");
     try {
-      const r = await fetch("/api/history?offset=" + offset);
+      const r = await api("/api/history?offset=" + offset);
       const data = await r.json();
       if (!r.ok) throw Error(data.error);
       setEntries((v) => (offset ? [...v, ...data.entries] : data.entries));
@@ -47,7 +48,7 @@ export function HistoryView() {
   }, []);
   async function remove(id: string) {
     try {
-      const r = await fetch("/api/history", {
+      const r = await api("/api/history", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id }),
