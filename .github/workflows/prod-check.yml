@@ -1,0 +1,38 @@
+# Temporary: read-only check that production encryption is on, then gets removed.
+# Prints only whether DATA_ENCRYPTION_KEY exists (name, never the value) and row counts, because these
+# logs are public: no personal data or secret values.
+name: Production check (encryption)
+on:
+  push:
+    branches: [claude/modest-planck-igiaoe]
+permissions:
+  contents: read
+jobs:
+  encryption:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: c429b2fc4f62d2414c880d87fce53206
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.16.0'
+          cache: npm
+      - run: npm ci
+      - name: Is DATA_ENCRYPTION_KEY set? (name only)
+        run: |
+          if npx wrangler secret list --name roamly 2>/dev/null | grep -q '"DATA_ENCRYPTION_KEY"'; then echo "DATA_ENCRYPTION_KEY: set"; else echo "DATA_ENCRYPTION_KEY: NOT set"; fi
+      - name: How much personal data is encrypted (counts only)
+        run: |
+          Q="SELECT 'trips.payload' f,count(*) total,coalesce(sum(payload LIKE 'enc1:%'),0) sealed FROM trips
+          UNION ALL SELECT 'trip_shares.payload',count(*),coalesce(sum(payload LIKE 'enc1:%'),0) FROM trip_shares
+          UNION ALL SELECT 'search_history.intake',count(*),coalesce(sum(intake LIKE 'enc1:%'),0) FROM search_history
+          UNION ALL SELECT 'waitlist.email',count(*),coalesce(sum(email LIKE 'enc1:%'),0) FROM waitlist
+          UNION ALL SELECT 'outings.payload',count(*),coalesce(sum(payload LIKE 'enc1:%'),0) FROM outings
+          UNION ALL SELECT 'outings.meeting',count(*),coalesce(sum(meeting LIKE 'enc1:%'),0) FROM outings
+          UNION ALL SELECT 'outing_requests.name',count(*),coalesce(sum(name LIKE 'enc1:%'),0) FROM outing_requests
+          UNION ALL SELECT 'outing_invites.email',count(*),coalesce(sum(email LIKE 'enc1:%'),0) FROM outing_invites"
+          npx wrangler d1 execute roamly-db --remote --json --command "$Q" 2>/dev/null \
+            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{for(const r of JSON.parse(s)[0].results)console.log(`${r.f.padEnd(24)} ${String(r.sealed).padStart(5)} of ${String(r.total).padStart(5)} encrypted`);})'
