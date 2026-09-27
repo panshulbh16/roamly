@@ -6,7 +6,9 @@ import { emailReady, escapeHtml, sendEmail } from "@/lib/server/email";
 // Best effort: without Resend configured, or if sending fails, the payment or refund still stands and this only logs.
 // Orders from before receipts existed stored no address; for those, Razorpay's signed webhook supplies the one used to pay.
 type OrderRow = { id: string; amount: number; currency: string; payment_id: string | null; email: string | null; current_end: number | null };
-const money = (amount: number, currency: string) => new Intl.NumberFormat("en-IN", { style: "currency", currency }).format(amount / 100);
+// Amounts are in the currency's smallest unit: cents, paise, yen (no decimals), fils (three).
+const money = (amount: number, currency: string) => { const f = new Intl.NumberFormat("en-IN", { style: "currency", currency });
+  return f.format(amount / 10 ** (f.resolvedOptions().maximumFractionDigits ?? 2)); };
 const day = (seconds: number) => new Date(seconds * 1000).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 
 function render(heading: string, rows: [string, string][], notes: string[], site: string) {

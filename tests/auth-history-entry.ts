@@ -25,6 +25,9 @@ export * as coupon from "../app/api/billing/coupon/route";
 export * as stripe from "../lib/billing/stripe";
 export * as stripeReturn from "../app/api/billing/stripe/return/route";
 export * as stripeWebhook from "../app/api/billing/stripe/webhook/route";
+export * as dodo from "../lib/billing/dodo";
+export * as dodoReturn from "../app/api/billing/dodo/return/route";
+export * as dodoWebhook from "../app/api/billing/dodo/webhook/route";
 
 export * as together from "../app/api/together/route";
 export * as inviteAccept from "../app/api/together/invite/route";

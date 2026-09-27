@@ -24,7 +24,7 @@ const tick=()=>new Promise(r=>setImmediate(r));
 test.after(()=>{rmSync(dir,{recursive:true,force:true});delete globalThis.__billingHooks;delete globalThis.__billingToasts;});
 
 // A browser on /pricing: records Plus announcements, address rewrites and the Razorpay options.
-function browser(search='',status={plus:false,until:0},{stripe=false}={}){
+function browser(search='',status={plus:false,until:0},{stripe=false,dodo=false}={}){
  const page={events:[],replaced:null,checkout:null,opened:false,requests:[],bodies:{},assigned:null};
  globalThis.window={location:{origin:'https://heyroamly.com',pathname:'/pricing',search,assign(u){page.assigned=u;}},history:{state:{router:'kept'},replaceState(s,_,url){page.replaced={s,url};}},
   dispatchEvent(e){page.events.push(e);return true;},
@@ -33,7 +33,7 @@ function browser(search='',status={plus:false,until:0},{stripe=false}={}){
   if(url==='/api/billing/status')return Response.json(status);
   const sent=options?.body?JSON.parse(options.body):undefined;if(sent)page.bodies[url]=sent;
   if(url==='/api/billing/coupon')return sent.code.trim().toUpperCase()==='ROAMLY99'?Response.json({code:'ROAMLY99',amount:9900,currency:'INR',label:'₹99',left:137,places:200}):Response.json({error:'That code isn’t valid.'},{status:400});
-  if(url==='/api/billing/checkout')return Response.json(stripe&&!sent?.code?{provider:'stripe',url:'https://checkout.stripe.com/c/pay/cs_test_ui'}:{provider:'razorpay',orderId:'order_abc',amount:sent?.code?9900:49900,currency:'INR',keyId:'rzp_test_fixture',email:'buyer@example.test'});
+  if(url==='/api/billing/checkout')return Response.json(dodo&&!sent?.code?{provider:'dodo',url:'https://test.checkout.dodopayments.com/session/cks_ui'}:stripe&&!sent?.code?{provider:'stripe',url:'https://checkout.stripe.com/c/pay/cs_test_ui'}:{provider:'razorpay',orderId:'order_abc',amount:sent?.code?9900:49900,currency:'INR',keyId:'rzp_test_fixture',email:'buyer@example.test'});
   return Response.json({error:'unexpected '+url},{status:404});};
  state.length=toasts.length=0;
  return page;
@@ -136,4 +136,13 @@ test('back from a cancelled Stripe checkout: a plain note, not an error, and the
  assert.match(text(render()),/Checkout was cancelled, so you weren’t charged\./);
  assert.deepEqual(toasts,[['message','Checkout was cancelled, so you weren’t charged.']]);
  assert.equal(page.replaced.url,'/pricing');
+});
+
+test('outside India with Dodo Payments: checkout goes to Dodo’s page, and the page says tax may be added there',async()=>{
+ props={price:'$10',via:'Dodo Payments'};
+ const page=browser('',{plus:false,until:0},{dodo:true});await load();
+ const shown=()=>text(render()).replace(/\s+/g,' ').replace(/ ([.,])/g,'$1');
+ assert.match(shown(),/\$10 for 30 days, paid once through Dodo Payments\./);
+ await button(render()).props.onClick();await tick();
+ assert.equal(page.assigned,'https://test.checkout.dodopayments.com/session/cks_ui');assert.equal(page.checkout,null,'no Razorpay checkout');
 });

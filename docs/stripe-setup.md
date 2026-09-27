@@ -1,6 +1,6 @@
 # Stripe setup (buyers outside India)
 
-Buyers outside India pay $10 for the 30-day Plus pass on Stripe Checkout, Stripe's own payment page. Razorpay keeps India. Until the three Stripe secrets below are set, Stripe stays off and everyone pays through Razorpay as before.
+Buyers outside India pay $10 for the 30-day Plus pass on Stripe Checkout, Stripe's own payment page. Razorpay keeps India. Until the three Stripe secrets below are set, Stripe stays off and everyone pays through Razorpay as before. If Dodo Payments (`docs/dodo-setup.md`) is also set up, Dodo is used instead.
 
 | Buyer | Pays through | Price |
 |---|---|---|
