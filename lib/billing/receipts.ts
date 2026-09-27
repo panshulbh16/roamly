@@ -4,6 +4,7 @@ import { emailReady, escapeHtml, sendEmail } from "@/lib/server/email";
 // A receipt when a pass is bought, a notice when a full refund takes it back. Only the call that actually changed the
 // order sends (markOrderPaid / markOrderRefunded return true once), so the callback and webhook never send twice.
 // Best effort: without Resend configured, or if sending fails, the payment or refund still stands and this only logs.
+// Orders from before receipts existed stored no address; for those, Razorpay's signed webhook supplies the one used to pay.
 type OrderRow = { id: string; amount: number; currency: string; payment_id: string | null; email: string | null; current_end: number | null };
 const money = (amount: number, currency: string) => new Intl.NumberFormat("en-IN", { style: "currency", currency }).format(amount / 100);
 const day = (seconds: number) => new Date(seconds * 1000).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
@@ -19,12 +20,15 @@ function render(heading: string, rows: [string, string][], notes: string[], site
   return { html, text };
 }
 
-async function send(orderId: string, kind: string, build: (o: OrderRow & { email: string }) => { subject: string; heading: string; rows: [string, string][]; notes: string[] }, site: string) {
+const address = (v: unknown) => typeof v === "string" && v.length <= 254 && /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/.test(v) ? v : "";
+
+async function send(orderId: string, kind: string, build: (o: OrderRow & { email: string }) => { subject: string; heading: string; rows: [string, string][]; notes: string[] }, site: string, payer?: unknown) {
   try {
     if (!emailReady()) return false;
     const o = await db().prepare("SELECT o.id,o.amount,o.currency,o.payment_id,o.email,s.current_end FROM orders o LEFT JOIN subscriptions s ON s.owner=o.owner WHERE o.id=?").bind(orderId).first<OrderRow>();
-    if (!o?.email) return false; // orders from before receipts existed have no address
-    const email = await unseal(o.email, "orders.email"), m = build({ ...o, email });
+    const email = o?.email ? await unseal(o.email, "orders.email") : address(payer);
+    if (!o || !email) return false;
+    const m = build({ ...o, email });
     await sendEmail({ to: email, subject: m.subject, ...render(m.heading, m.rows, m.notes, site) }, `Couldn't send the ${kind}.`);
     return true;
   } catch (e) {
@@ -33,15 +37,15 @@ async function send(orderId: string, kind: string, build: (o: OrderRow & { email
   }
 }
 
-export const sendReceipt = (orderId: string, site: string) => send(orderId, "receipt", o => ({
+export const sendReceipt = (orderId: string, site: string, payer?: unknown) => send(orderId, "receipt", o => ({
   subject: "Your Roamly Plus receipt",
   heading: "Thanks, you’re on Plus",
   rows: [["Item", "Roamly Plus · 30-day pass"], ["Amount paid", money(o.amount, o.currency)], ["Paid on", day(Date.now() / 1000)],
     ...(o.current_end ? [["Plus active until", day(o.current_end)] as [string, string]] : []), ["Order", o.id], ["Payment", o.payment_id ?? ""]],
   notes: ["The pass doesn’t renew on its own; buying again adds another 30 days.", "This is a payment receipt, not a tax invoice."],
-}), site);
+}), site, payer);
 
-export const sendRefundNotice = (orderId: string, site: string) => send(orderId, "refund", o => {
+export const sendRefundNotice = (orderId: string, site: string, payer?: unknown) => send(orderId, "refund", o => {
   const active = !!o.current_end && o.current_end > Date.now() / 1000;
   return {
     subject: "Your Roamly Plus refund",
@@ -49,4 +53,4 @@ export const sendRefundNotice = (orderId: string, site: string) => send(orderId,
     rows: [["Refunded", money(o.amount, o.currency)], ["Order", o.id], ["Payment", o.payment_id ?? ""], ["Plus", active ? `active until ${day(o.current_end!)}` : "ended"]],
     notes: ["The 30 days this payment bought have been removed.", "Banks usually show the refund within 5–7 working days."],
   };
-}, site);
+}, site, payer);

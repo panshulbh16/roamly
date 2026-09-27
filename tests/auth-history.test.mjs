@@ -707,7 +707,7 @@ test('Plus receipts and refunds: one receipt per purchase, a full refund takes b
   const buy=async()=>{const r=req('/api/billing/checkout',{});r.headers.set('cf-ipcountry','IN');return (await app.checkout.POST(r)).json();};
   const pay=async(order,payment)=>(await app.billingCallback.POST(new Request(origin+'/api/billing/callback',{method:'POST',headers:{origin:'https://api.razorpay.com'},body:new URLSearchParams({razorpay_order_id:order,razorpay_payment_id:payment,razorpay_signature:await sign(settings.RAZORPAY_KEY_SECRET,order+'|'+payment)})}))).headers.get('location');
   const hook=async event=>{const body=JSON.stringify(event);return app.webhook.POST(new Request(origin+'/api/billing/webhook',{method:'POST',headers:{'x-razorpay-signature':await sign(settings.RAZORPAY_WEBHOOK_SECRET,body)},body}));};
-  const refund=(order,payment,status='full',refunded=49900)=>({event:'refund.processed',payload:{refund:{entity:{id:'rfnd_'+payment,amount:refunded,payment_id:payment,status:'processed'}},payment:{entity:{id:payment,order_id:order,amount:49900,amount_refunded:refunded,refund_status:status}}}});
+  const refund=(order,payment,status='full',refunded=49900,email)=>({event:'refund.processed',payload:{refund:{entity:{id:'rfnd_'+payment,amount:refunded,payment_id:payment,status:'processed'}},payment:{entity:{id:payment,order_id:order,amount:49900,amount_refunded:refunded,refund_status:status,email}}}});
   const pass=()=>sql.prepare("SELECT current_end,paid_count FROM subscriptions WHERE owner='refund-buyer'").get();
   const day=s=>new Date(s*1000).toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'});
   try{
@@ -749,6 +749,16 @@ test('Plus receipts and refunds: one receipt per purchase, a full refund takes b
     assert.equal(pass().paid_count,1,'granted although the receipt failed');resendDown=false;
     const legacy=await buy();sql.prepare('UPDATE orders SET email=NULL WHERE id=?').run(legacy.orderId);
     assert.equal(await pay(legacy.orderId,'pay_legacy'),origin+'/pricing?checkout=activated');assert.equal(mails.length,4);
+    // Refunding such an order still sends the notice, to the address Razorpay says paid; the stored one wins when present.
+    assert.equal((await hook(refund(legacy.orderId,'pay_legacy','full',49900,'payer@example.test'))).status,200);
+    assert.equal(mails.length,5);assert.equal(mails[4].to,'payer@example.test');assert.equal(mails[4].subject,'Your Roamly Plus refund');
+    const legacy2=await buy();sql.prepare('UPDATE orders SET email=NULL WHERE id=?').run(legacy2.orderId);await pay(legacy2.orderId,'pay_legacy2');
+    assert.equal((await hook(refund(legacy2.orderId,'pay_legacy2','full',49900,'a@b.test\nBcc: x@y.test'))).status,200);
+    assert.equal(sql.prepare('SELECT status FROM orders WHERE id=?').get(legacy2.orderId).status,'refunded','refund stands without a usable address');
+    assert.equal(mails.length,5,'a malformed address gets nothing');
+    const d=await buy();await pay(d.orderId,'pay_d');assert.equal(mails.length,6);
+    await hook(refund(d.orderId,'pay_d','full',49900,'someone-else@example.test'));
+    assert.equal(mails[6].to,'refund-buyer@example.test','the stored address wins over the event');
   } finally {
     globalThis.fetch=original;for(const k of Object.keys(settings))delete context.env[k];context.headers=new Headers();
     sql.exec("DELETE FROM orders WHERE owner='refund-buyer'");sql.exec("DELETE FROM subscriptions WHERE owner='refund-buyer'");sql.exec("DELETE FROM usage WHERE key LIKE 'checkout:refund-buyer:%'");
