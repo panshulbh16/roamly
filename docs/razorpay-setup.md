@@ -9,7 +9,7 @@ Store these in the site's secret/environment settings, never in source control o
 - `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` (secret)
 - `RAZORPAY_WEBHOOK_SECRET` (secret)
 - `RAZORPAY_ENABLED=true` to open checkout
-- `RAZORPAY_INTERNATIONAL=true` to charge $10 to visitors whose Cloudflare country is known and not India. Unknown country pays ₹499. Needs Razorpay international cards and/or PayPal active, otherwise foreign visitors see a checkout with no usable method.
+- `RAZORPAY_INTERNATIONAL=true` to charge $10 to visitors whose Cloudflare country is known and not India. Unknown country pays ₹499. Needs Razorpay international cards and/or PayPal active, otherwise foreign visitors see a checkout with no usable method. When Stripe is set up (`docs/stripe-setup.md`), it takes those visitors instead and this setting is ignored for them.
 
 No subscription plan is needed.
 
@@ -19,7 +19,7 @@ In Razorpay → Webhooks, add `https://heyroamly.com/api/billing/webhook` (the o
 
 ## Launch code
 
-`ROAMLY99` gives one 30-day pass for ₹99 (INR, whatever the country) to the first 200 accounts that use it. Signed-in buyers enter it on `/pricing`, or open a link such as `https://heyroamly.com/pricing?code=ROAMLY99`, which fills it in and still works after signing in.
+`ROAMLY99` gives one 30-day pass for ₹99 (INR through Razorpay, whatever the country, so it needs an Indian card or UPI) to the first 200 accounts that use it. Signed-in buyers enter it on `/pricing`, or open a link such as `https://heyroamly.com/pricing?code=ROAMLY99`, which fills it in and still works after signing in.
 
 - **Once per account:** paying with the code uses it, and a refund doesn't give it back.
 - **The 200 places:** a place is taken by paying or, for 30 minutes, by an open checkout. Reopening checkout reuses the same order, so one account never holds two places. Taking the place and saving the order happen in one database statement, so two people paying at the same moment can't both get the last one. A checkout left open for over 30 minutes and then paid still grants the pass, which can put the total a little over 200.

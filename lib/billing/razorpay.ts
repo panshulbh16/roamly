@@ -54,7 +54,8 @@ export async function checkoutAttempt(owner: string) {
     .bind(`checkout:${owner}:${new Date().toISOString().slice(0,10)}`).first();
   if(!attempt) throw new ApiError(429,"Too many checkout attempts today. Please try again tomorrow.");
 }
-export const requestCountry = (r: Request) => (r as Request & { cf?: { country?: string } }).cf?.country ?? r.headers.get("cf-ipcountry");
+// The header first, as the pricing page (which only sees headers) reads it: the price shown is the price charged.
+export const requestCountry = (r: Request) => r.headers.get("cf-ipcountry") ?? (r as Request & { cf?: { country?: string } }).cf?.country;
 async function razorpay(path:string, data:unknown) {
   if(!razorpayReady()) throw new ApiError(503,"Plus checkout is not open yet.");
   const c=config();

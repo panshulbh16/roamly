@@ -29,7 +29,7 @@ Until the key is set, the app works as before and stores plain text. Once it's s
 
 Every page calls the server through `lib/client/api.ts`, which adds `X-Roamly-Client: web`. The Worker (`worker/index.ts`) answers any other `/api/` request with the same 404 as a missing route: an address typed into the browser, another site, or a script. The path is decoded and lower-cased first, so `/%61pi/…` or `//api/…` can't slip past.
 
-Razorpay's checkout callback and webhook are the only exceptions; each verifies Razorpay's signature. A test fails if a page calls `fetch()` directly.
+The payment providers' calls are the only exceptions. Razorpay's checkout callback and webhook each verify Razorpay's signature. Stripe's return page asks Stripe's API whether the payment went through, and its webhook checks a recent `Stripe-Signature`. A test fails if a page calls `fetch()` directly.
 
 Behind the gate, every route still checks sign-in, same-origin writes and ownership. Hosts see a per-trip handle for each traveller, never their account ID.
 
@@ -38,7 +38,7 @@ A signed-in person can always see their own requests in the browser's developer 
 ## Third parties see only what they need
 
 - **Google Analytics** gets addresses without query strings or IDs (`/share/:id`, `/together/invite`). Invite tokens sign people in, so they never leave the site. The only query values it sees are campaign tags (`utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`) with short plain values, so marketing links can be measured.
-- **Anthropic, Resend and Razorpay's API** are called only from the server.
+- **Anthropic, Resend, Razorpay's and Stripe's APIs** are called only from the server.
 
 ## Headers
 

@@ -18,29 +18,29 @@ writeFileSync(join(dir,'fixture.mjs'),compiled.outputFiles[0].text);
 const {BillingControls}=await import(pathToFileURL(join(dir,'fixture.mjs')));
 const nodes=n=>!n||typeof n!=='object'?[]:Array.isArray(n)?n.flatMap(nodes):[n,...nodes(n.props?.children)];
 const text=n=>typeof n==='string'||typeof n==='number'?String(n):Array.isArray(n)?n.map(text).join(' '):n?.props?text(n.props.children):'';
-const render=()=>{cursor=0;return BillingControls({price:'₹499'});};
+let props={price:'₹499'};const render=()=>{cursor=0;return BillingControls(props);};
 const button=tree=>nodes(tree).find(n=>n.type==='button'&&n.props.className==='primary'); // the buy button
 const tick=()=>new Promise(r=>setImmediate(r));
 test.after(()=>{rmSync(dir,{recursive:true,force:true});delete globalThis.__billingHooks;delete globalThis.__billingToasts;});
 
 // A browser on /pricing: records Plus announcements, address rewrites and the Razorpay options.
-function browser(search='',status={plus:false,until:0}){
- const page={events:[],replaced:null,checkout:null,opened:false,requests:[],bodies:{}};
- globalThis.window={location:{origin:'https://heyroamly.com',pathname:'/pricing',search},history:{state:{router:'kept'},replaceState(s,_,url){page.replaced={s,url};}},
+function browser(search='',status={plus:false,until:0},{stripe=false}={}){
+ const page={events:[],replaced:null,checkout:null,opened:false,requests:[],bodies:{},assigned:null};
+ globalThis.window={location:{origin:'https://heyroamly.com',pathname:'/pricing',search,assign(u){page.assigned=u;}},history:{state:{router:'kept'},replaceState(s,_,url){page.replaced={s,url};}},
   dispatchEvent(e){page.events.push(e);return true;},
   Razorpay:class{constructor(options){page.checkout=options;}open(){page.opened=true;}on(){}}};
  globalThis.fetch=async(url,options)=>{page.requests.push([url,options?.method??'GET']);assert.equal(new Headers(options?.headers).get('x-roamly-client'),'web','calls go through lib/client/api.ts');
   if(url==='/api/billing/status')return Response.json(status);
   const sent=options?.body?JSON.parse(options.body):undefined;if(sent)page.bodies[url]=sent;
   if(url==='/api/billing/coupon')return sent.code.trim().toUpperCase()==='ROAMLY99'?Response.json({code:'ROAMLY99',amount:9900,currency:'INR',label:'₹99',left:137,places:200}):Response.json({error:'That code isn’t valid.'},{status:400});
-  if(url==='/api/billing/checkout')return Response.json({orderId:'order_abc',amount:sent?.code?9900:49900,currency:'INR',keyId:'rzp_test_fixture',email:'buyer@example.test'});
+  if(url==='/api/billing/checkout')return Response.json(stripe&&!sent?.code?{provider:'stripe',url:'https://checkout.stripe.com/c/pay/cs_test_ui'}:{provider:'razorpay',orderId:'order_abc',amount:sent?.code?9900:49900,currency:'INR',keyId:'rzp_test_fixture',email:'buyer@example.test'});
   return Response.json({error:'unexpected '+url},{status:404});};
  state.length=toasts.length=0;
  return page;
 }
 async function load(){render();const cleanup=effect();await tick();await tick();return cleanup;}
 const originals={window:globalThis.window,fetch:globalThis.fetch};
-test.afterEach(()=>{globalThis.window=originals.window;globalThis.fetch=originals.fetch;});
+test.afterEach(()=>{globalThis.window=originals.window;globalThis.fetch=originals.fetch;props={price:'₹499'};});
 
 test('checkout returns the buyer to Roamly through the server after paying, not a page-bound handler',async()=>{
  const page=browser();await load();
@@ -111,4 +111,29 @@ test('without a code nothing extra is asked for',async()=>{
  const page=browser();await load();
  assert.ok(!page.requests.some(([u])=>u==='/api/billing/coupon'));
  assert.match(text(render()),/Launch code/);
+});
+
+test('outside India with Stripe: checkout goes to Stripe’s own page, and Razorpay never opens',async()=>{
+ props={price:'$10',via:'Stripe'};
+ const page=browser('',{plus:false,until:0},{stripe:true});await load();
+ const shown=()=>text(render()).replace(/\s+/g,' ').replace(/ ([.,])/g,'$1');
+ assert.match(shown(),/Get Plus · \$10 for 30 days/);assert.match(shown(),/\$10 for 30 days, paid once through Stripe\./);
+ await button(render()).props.onClick();await tick();
+ assert.equal(page.assigned,'https://checkout.stripe.com/c/pay/cs_test_ui');
+ assert.equal(page.checkout,null,'no Razorpay checkout');assert.match(shown(),/Opening checkout…/,'the button stays busy while the browser leaves');
+});
+test('the ₹99 code for a buyer outside India says it goes through Razorpay and needs an Indian card or UPI',async()=>{
+ props={price:'$10',via:'Stripe'};
+ const page=browser('?code=ROAMLY99',{plus:false,until:0},{stripe:true});await load();await tick();await tick();
+ const shown=()=>text(render()).replace(/\s+/g,' ').replace(/ ([.,])/g,'$1');
+ assert.match(shown(),/It’s paid in rupees through Razorpay, so it needs an Indian card or UPI\./);
+ assert.match(shown(),/usually \$10\), paid once through Razorpay\./);
+ await button(render()).props.onClick();await tick();
+ assert.equal(page.assigned,null);assert.equal(page.checkout.amount,9900,'Razorpay opens for ₹99');
+});
+test('back from a cancelled Stripe checkout: a plain note, not an error, and the address is cleaned',async()=>{
+ const page=browser('?checkout=cancelled');await load();
+ assert.match(text(render()),/Checkout was cancelled, so you weren’t charged\./);
+ assert.deepEqual(toasts,[['message','Checkout was cancelled, so you weren’t charged.']]);
+ assert.equal(page.replaced.url,'/pricing');
 });
