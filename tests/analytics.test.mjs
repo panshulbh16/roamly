@@ -61,4 +61,18 @@ test('Google never sees invite tokens, share IDs, trip IDs or other query string
   const sent=JSON.stringify(calls());
   for(const secret of [token,'3f0c2d1e','checkout=','msg=abc','inbox'])assert.ok(!sent.includes(secret),secret+' never reaches Google');
 });
+test('campaign tags reach Google so a Reddit post gets credit; nothing else in the query does',()=>{
+  browser('heyroamly.com','/?utm_source=reddit&utm_medium=social&utm_campaign=r_sideproject&t=tok_secret&utm_content=me@example.com&utm_term=a%20b');
+  render();
+  go('https://heyroamly.com/share/3f0c2d1e-0000-4000-8000-000000000000?utm_source=reddit&ref=abc');render();
+  go('https://heyroamly.com/pricing');render();
+  const views=calls().filter(c=>c[0]==='event'&&c[1]==='page_view').map(c=>[c[2].page_location,c[2].page_referrer]);
+  assert.deepEqual(views,[
+    ['https://heyroamly.com/?utm_source=reddit&utm_medium=social&utm_campaign=r_sideproject',''],
+    ['https://heyroamly.com/share/:id?utm_source=reddit','https://heyroamly.com/?utm_source=reddit&utm_medium=social&utm_campaign=r_sideproject'],
+    ['https://heyroamly.com/pricing','https://heyroamly.com/share/:id?utm_source=reddit'],
+  ]);
+  const sent=JSON.stringify(calls());
+  for(const secret of ['tok_secret','example.com','ref=','3f0c2d1e','utm_term'])assert.ok(!sent.includes(secret),secret+' never reaches Google');
+});
 test.after(()=>{for(const k of ['window','location','localStorage','document','__analyticsHooks'])delete globalThis[k];});

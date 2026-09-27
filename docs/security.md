@@ -37,7 +37,7 @@ A signed-in person can always see their own requests in the browser's developer 
 
 ## Third parties see only what they need
 
-- **Google Analytics** gets addresses without query strings or IDs (`/share/:id`, `/together/invite`). Invite tokens sign people in, so they never leave the site.
+- **Google Analytics** gets addresses without query strings or IDs (`/share/:id`, `/together/invite`). Invite tokens sign people in, so they never leave the site. The only query values it sees are campaign tags (`utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`) with short plain values, so marketing links can be measured.
 - **Anthropic, Resend and Razorpay's API** are called only from the server.
 
 ## Headers
