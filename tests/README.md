@@ -22,6 +22,7 @@ Tests mock external services; the live planner suite is skipped unless explicitl
 | Mobile hook | `mobile`: breakpoint boundaries, media-query callback and cleanup using an isolated hook fixture |
 | Workspace, history, sign-in and app shell | `screens`, `navigation`: initial states, navigation, required controls and rendered escaping |
 | Cost, advice, carousel and stay components | `cost`, `ui-components`: rendered controls, links, legacy data and accessibility attributes |
+| Plus billing, receipts and refunds | `auth-history`, `billing-ui`: currency, signed callback and webhook, one grant and one receipt per order, stacking, full refunds taking back exactly one pass, partial/unknown/unsigned refunds ignored, email failures never blocking payment |
 | Encryption at rest | `auth-history`: sealed storage for every personal column, plaintext compatibility, lookup keys, legacy sweep without notifications, tamper and missing-key failures |
 | API gate, security headers and analytics privacy | `worker-cache`, `analytics`, `billing-ui`: only app calls reach `/api/`, path-encoding bypasses, HSTS/framing headers, no tokens or IDs sent to Google Analytics |
 | Build and emitted assets | `build-command`, `rendered-html`, `ui-components`: build tooling and output contracts |

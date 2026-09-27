@@ -691,3 +691,66 @@ test('personal data is sealed at rest, served in the clear, and old plaintext ro
     sql.prepare('DELETE FROM outings WHERE id=?').run(outing);
   }
 });
+
+test('Plus receipts and refunds: one receipt per purchase, a full refund takes back exactly its 30 days',async()=>{
+  jar.clear();user('refund-buyer');const original=globalThis.fetch;
+  const settings={RAZORPAY_ENABLED:'true',RAZORPAY_KEY_ID:'fixture',RAZORPAY_KEY_SECRET:'fixture-secret',RAZORPAY_WEBHOOK_SECRET:'webhook-fixture',RESEND_API_KEY:'re_test',EMAIL_FROM:'Roamly <billing@example.test>',DATA_ENCRYPTION_KEY:SEAL_KEY};
+  Object.assign(context.env,settings);
+  const mails=[];let n=0,resendDown=false;
+  globalThis.fetch=async(url,options)=>{
+    const u=new URL(url),body=JSON.parse(options.body);
+    if(u.host==='api.resend.com'){if(resendDown)return new Response('down',{status:500});mails.push(body);return Response.json({id:'email_'+mails.length});}
+    if(u.pathname==='/v1/orders')return Response.json({id:'order_refund'+(++n)+Date.now(),amount:body.amount,currency:body.currency});
+    throw Error('Unexpected request '+url);
+  };
+  const sign=async(secret,text)=>{const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);return Buffer.from(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(text))).toString('hex');};
+  const buy=async()=>{const r=req('/api/billing/checkout',{});r.headers.set('cf-ipcountry','IN');return (await app.checkout.POST(r)).json();};
+  const pay=async(order,payment)=>(await app.billingCallback.POST(new Request(origin+'/api/billing/callback',{method:'POST',headers:{origin:'https://api.razorpay.com'},body:new URLSearchParams({razorpay_order_id:order,razorpay_payment_id:payment,razorpay_signature:await sign(settings.RAZORPAY_KEY_SECRET,order+'|'+payment)})}))).headers.get('location');
+  const hook=async event=>{const body=JSON.stringify(event);return app.webhook.POST(new Request(origin+'/api/billing/webhook',{method:'POST',headers:{'x-razorpay-signature':await sign(settings.RAZORPAY_WEBHOOK_SECRET,body)},body}));};
+  const refund=(order,payment,status='full',refunded=49900)=>({event:'refund.processed',payload:{refund:{entity:{id:'rfnd_'+payment,amount:refunded,payment_id:payment,status:'processed'}},payment:{entity:{id:payment,order_id:order,amount:49900,amount_refunded:refunded,refund_status:status}}}});
+  const pass=()=>sql.prepare("SELECT current_end,paid_count FROM subscriptions WHERE owner='refund-buyer'").get();
+  const day=s=>new Date(s*1000).toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'});
+  try{
+    // A purchase sends one receipt, however many times Razorpay reports it.
+    const a=await buy();
+    assert.match(sql.prepare('SELECT email FROM orders WHERE id=?').get(a.orderId).email,/^enc1:/,'the receipt address is sealed');
+    assert.equal(await pay(a.orderId,'pay_a'),origin+'/pricing?checkout=activated');
+    await pay(a.orderId,'pay_a');
+    assert.equal((await hook({event:'order.paid',payload:{order:{entity:{id:a.orderId}},payment:{entity:{id:'pay_a'}}}})).status,200);
+    assert.equal(mails.length,1,'callback + replay + webhook = one receipt');
+    const first=pass(),receipt=mails[0];
+    assert.equal(receipt.to,'refund-buyer@example.test');assert.equal(receipt.from,settings.EMAIL_FROM);assert.equal(receipt.subject,'Your Roamly Plus receipt');
+    for(const part of ['₹499.00',a.orderId,'pay_a',day(first.current_end),'not a tax invoice'])assert.ok(receipt.text.includes(part)&&receipt.html.includes(part),part);
+    assert.ok(receipt.html.includes(origin+'/pricing'));
+    // A second pass stacks, via the webhook alone.
+    const b=await buy();
+    assert.equal((await hook({event:'order.paid',payload:{order:{entity:{id:b.orderId}},payment:{entity:{id:'pay_b'}}}})).status,200);
+    assert.equal(mails.length,2);const stacked=pass();assert.deepEqual([stacked.paid_count,stacked.current_end],[2,first.current_end+30*86400]);
+    // Refunds: unsigned, partial, mismatched and unknown ones change nothing.
+    assert.equal((await app.webhook.POST(new Request(origin+'/api/billing/webhook',{method:'POST',headers:{'x-razorpay-signature':'0'.repeat(64)},body:JSON.stringify(refund(b.orderId,'pay_b'))}))).status,401);
+    assert.equal((await hook(refund(b.orderId,'pay_b','partial',10000))).status,200);
+    assert.equal((await hook(refund(b.orderId,'pay_a'))).status,200,'payment of a different order');
+    assert.equal((await hook(refund('order_unknown','pay_x'))).status,200);
+    assert.deepEqual(pass(),stacked);assert.equal(mails.length,2);
+    // A full refund takes back exactly that pass's 30 days, once, and says so.
+    assert.equal((await hook(refund(b.orderId,'pay_b'))).status,200);
+    assert.equal((await hook(refund(b.orderId,'pay_b'))).status,200,'replayed');
+    assert.deepEqual({...pass()},{current_end:first.current_end,paid_count:1});
+    assert.equal(sql.prepare('SELECT status FROM orders WHERE id=?').get(b.orderId).status,'refunded');
+    assert.equal(mails.length,3);assert.equal(mails[2].subject,'Your Roamly Plus refund');
+    assert.ok(mails[2].text.includes('₹499.00')&&mails[2].text.includes('active until '+day(first.current_end)),'the other pass stays');
+    assert.equal((await (await app.billingStatus.GET()).json()).plus,true);
+    // Refunding the last pass ends Plus.
+    assert.equal((await hook(refund(a.orderId,'pay_a'))).status,200);
+    assert.equal(pass().paid_count,0);assert.equal((await (await app.billingStatus.GET()).json()).plus,false);
+    assert.ok(mails[3].text.includes('Plus: ended'));
+    // Email trouble never blocks a payment, and orders from before receipts (no address) just skip it.
+    resendDown=true;const c=await buy();assert.equal(await pay(c.orderId,'pay_c'),origin+'/pricing?checkout=activated');
+    assert.equal(pass().paid_count,1,'granted although the receipt failed');resendDown=false;
+    const legacy=await buy();sql.prepare('UPDATE orders SET email=NULL WHERE id=?').run(legacy.orderId);
+    assert.equal(await pay(legacy.orderId,'pay_legacy'),origin+'/pricing?checkout=activated');assert.equal(mails.length,4);
+  } finally {
+    globalThis.fetch=original;for(const k of Object.keys(settings))delete context.env[k];context.headers=new Headers();
+    sql.exec("DELETE FROM orders WHERE owner='refund-buyer'");sql.exec("DELETE FROM subscriptions WHERE owner='refund-buyer'");sql.exec("DELETE FROM usage WHERE key LIKE 'checkout:refund-buyer:%'");
+  }
+});

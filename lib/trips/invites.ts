@@ -4,6 +4,7 @@ import { authConfig } from "@/lib/auth/config";
 import { ApiError, db } from "@/lib/server/context";
 import { upcoming } from "@/lib/trips/together";
 import { lookupKey, seal, stale, unseal } from "@/lib/server/vault";
+import { emailReady, escapeHtml as escape, sendEmail } from "@/lib/server/email";
 
 const config = () => env as unknown as Record<string, string | undefined>;
 export const INVITE_DAYS = 14;
@@ -16,9 +17,7 @@ export function newToken() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
-export const invitesReady = () => !!(config().RESEND_API_KEY && config().EMAIL_FROM && config().SUPABASE_SERVICE_ROLE_KEY && authConfig().enabled);
-
-const escape = (s: string) => s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+export const invitesReady = () => !!(emailReady() && config().SUPABASE_SERVICE_ROLE_KEY && authConfig().enabled);
 
 export async function sendInviteEmail(to: string, trip: { title: string; hostName: string; city: string; destination: string; startDate: string }, link: string) {
   const date = new Date(trip.startDate + "T12:00:00Z").toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
@@ -31,13 +30,7 @@ export async function sendInviteEmail(to: string, trip: { title: string; hostNam
   <a href="${escape(link)}" style="display:inline-block;background:#25664f;color:#fff;text-decoration:none;padding:13px 22px;border-radius:8px;font-weight:600">Join the trip</a>
   <p style="color:#72777f;font-size:13px;margin-top:22px">The button signs you in to Roamly with this email address and adds you to the trip. It works once and expires in ${INVITE_DAYS} days. If you weren't expecting this, you can ignore it.</p></div>`;
   const text = `${trip.hostName} invited you on a trip: ${trip.title} (${trip.city} → ${trip.destination}, ${date}).\n\nJoin the trip: ${link}\n\nThe link signs you in to Roamly with this email address and adds you to the trip. It works once and expires in ${INVITE_DAYS} days.`;
-  const r = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${config().RESEND_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: config().EMAIL_FROM, to, subject: `${trip.hostName} invited you: ${trip.title}`, html, text }),
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!r.ok) throw new ApiError(502, `Couldn't send the invite to ${to}. Try again in a minute.`);
+  await sendEmail({ to, subject: `${trip.hostName} invited you: ${trip.title}`, html, text }, `Couldn't send the invite to ${to}. Try again in a minute.`);
 }
 
 /**

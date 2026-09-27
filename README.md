@@ -69,7 +69,7 @@ ChatGPT identity headers (`oai-authenticated-user-*`) are trusted only when the 
 
 ## Commercial launch gates
 1. Configure and live-test provider credentials, latency, failure behavior and spend caps.
-2. Payments: Razorpay Orders checkout, signature-verified callback and `order.paid` webhook, idempotent `orders` records and Plus entitlement are implemented. Still needed: a live test purchase and refund, refund handling in-app, and tax handling.
+2. Payments: Razorpay Orders checkout, signature-verified callback and `order.paid` webhook, idempotent `orders` records and Plus entitlement are implemented. Emailed receipts, and full refunds that remove the pass, are implemented too. Still needed: a live test purchase and refund, and tax handling (receipts are not tax invoices).
 3. Confirm public sign-in and audience settings for the Worker deployment.
 4. Set business identity, support address, retention/export/deletion flow, privacy policy and terms for the actual operator.
 5. Integrate verified travel/booking data if claiming current prices, availability or affiliate revenue. Existing itineraries are unverified suggestions.

@@ -6,7 +6,7 @@ import { lookupKey, seal, unseal } from "@/lib/server/vault";
 const COLUMNS = [
   ["trips", "payload"], ["trip_shares", "payload"], ["waitlist", "email"],
   ["search_history", "intake"], ["search_history", "trip"], ["search_history", "error"],
-  ["outings", "payload"], ["outings", "meeting"], ["outing_requests", "name"], ["outing_requests", "message"],
+  ["outings", "payload"], ["outings", "meeting"], ["outing_requests", "name"], ["outing_requests", "message"], ["orders", "email"],
 ] as const;
 const BATCH = 100;
 

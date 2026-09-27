@@ -5,7 +5,7 @@
 `lib/server/vault.ts` seals personal data with AES-256-GCM before it reaches D1, so a database export, backup or the Cloudflare dashboard shows `enc1:…` ciphertext:
 
 - saved trips, share snapshots, search history (destination, needs, results)
-- waitlist and invite emails
+- waitlist, invite and receipt emails
 - Travel Together plans, meeting points, and join-request names and messages
 
 Each value is bound to its column, and tampering is detected. Sealing is deterministic (the IV is an HMAC of the content), so unchanged data keeps the same ciphertext and the "trip updated" notifications still fire only on real edits. Invite emails also get a keyed lookup hash (`email_key`) so duplicates can still be matched.
