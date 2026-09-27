@@ -26,6 +26,8 @@ To refund, use Razorpay → Payments → Refund. When Razorpay reports the refun
 - **Full refund:** removes the 30 days that payment bought and emails the buyer. If they had bought another pass, that pass is kept.
 - **Partial refund:** leaves the pass unchanged.
 
+Emails go to the address saved with the order. Orders placed before receipts existed (27 September 2026) have none, so their refund email goes to the address the buyer entered in Razorpay's checkout.
+
 Replayed events change nothing.
 
 ## PayPal

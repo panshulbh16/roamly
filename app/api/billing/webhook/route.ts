@@ -8,10 +8,10 @@ export async function POST(r:Request){try{
   if(!await verifyWebhook(bytes,r.headers.get("x-razorpay-signature")??""))throw new ApiError(401,"Invalid signature.");
   let event;try{event=JSON.parse(new TextDecoder().decode(bytes));}catch{throw new ApiError(400,"Invalid event.");}
   const order=event?.payload?.order?.entity?.id,payment=event?.payload?.payment?.entity,site=new URL(r.url).origin;
-  if(event?.event==="order.paid"&&typeof order==="string"&&typeof payment?.id==="string"&&await markOrderPaid(order,payment.id))await sendReceipt(order,site);
+  if(event?.event==="order.paid"&&typeof order==="string"&&typeof payment?.id==="string"&&await markOrderPaid(order,payment.id))await sendReceipt(order,site,payment.email);
   if(event?.event==="refund.processed"&&typeof payment?.order_id==="string"&&typeof payment?.id==="string"){
     const full=payment.refund_status==="full"||(typeof payment.amount==="number"&&payment.amount_refunded>=payment.amount);
-    if(full&&await markOrderRefunded(payment.order_id,payment.id))await sendRefundNotice(payment.order_id,site);
+    if(full&&await markOrderRefunded(payment.order_id,payment.id))await sendRefundNotice(payment.order_id,site,payment.email);
   }
   return Response.json({received:true});
 }catch(e){return failure(e);}}
