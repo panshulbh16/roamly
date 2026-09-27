@@ -1,0 +1,83 @@
+# Temporary: checks the ROAMLY99 launch code on the live site after roamly#20 deployed, then gets removed.
+# Harmless requests only: page loads, a signed-out browser, and API calls that are refused without an account.
+# No order is created and nothing is paid. Logs are public, so nothing personal is printed.
+name: Production smoke test (launch code)
+on:
+  push:
+    branches: [claude/modest-planck-igiaoe]
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SITE: https://heyroamly.com
+      EXPECTED_SHA: 04ef0460e666eb4c749c896b3497e9c7faef0b51
+    steps:
+      - name: Live version is the launch-code release
+        run: |
+          live=$(curl -sS -o /dev/null -D - "$SITE/" | tr -d '\r' | awk -F': ' 'tolower($1)=="x-roamly-version"{print $2}')
+          echo "live version: ${live:-unknown}"
+          [ "$live" = "$EXPECTED_SHA" ] || { echo "::error::expected $EXPECTED_SHA"; exit 1; }
+      - name: Install a browser
+        run: |
+          mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --silent playwright@1 && npx playwright install --with-deps chromium >/dev/null
+      - name: Check the launch code on production
+        working-directory: /tmp/pw
+        run: |
+          cat > smoke.mjs <<'EOF2'
+          import { chromium } from 'playwright';
+          const site = process.env.SITE;
+          let failed = false;
+          const check = (name, ok, detail = '') => { console.log(`${ok ? '✓' : '✗'} ${name}${detail ? ' — ' + detail : ''}`); if (!ok) failed = true; };
+          const call = async (path, { app = true, origin = site, body = { code: 'ROAMLY99' } } = {}) => {
+            const r = await fetch(site + path, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/json', ...(origin && { Origin: origin }), ...(app && { 'X-Roamly-Client': 'web' }) }, body: JSON.stringify(body) });
+            return { status: r.status, error: (await r.json().catch(() => ({}))).error ?? '' };
+          };
+
+          // The code-check route is deployed, behind the API gate, and refuses anyone not signed in.
+          let r = await call('/api/billing/coupon', { app: false });
+          check('code check without the app header: hidden (404)', r.status === 404, `${r.status} ${r.error}`);
+          r = await call('/api/billing/coupon', { origin: 'https://evil.example' });
+          check('code check from another site: refused', r.status === 403 || r.status === 404, `${r.status} ${r.error}`);
+          r = await call('/api/billing/coupon');
+          check('code check signed out: asks to sign in (401)', r.status === 401 && r.error === 'Please sign in to continue.', `${r.status} ${r.error}`);
+          r = await call('/api/billing/checkout');
+          check('checkout with the code signed out: refused, no order (401)', r.status === 401, `${r.status} ${r.error}`);
+          r = await call('/api/billing/nonexistent');
+          check('(control) a route that does not exist: 404', r.status === 404, String(r.status));
+
+          // The shared link loads, and the live page carries the launch-code field.
+          const page200 = await fetch(site + '/pricing?code=ROAMLY99');
+          check('/pricing?code=ROAMLY99 loads', page200.status === 200, String(page200.status));
+          const browser = await chromium.launch();
+          const page = await browser.newPage();
+          const coupons = [];
+          page.on('request', q => { if (q.url().endsWith('/api/billing/coupon')) coupons.push(q.url()); });
+          await page.goto(site + '/pricing?code=ROAMLY99', { waitUntil: 'networkidle' });
+          const signIn = page.getByRole('link', { name: 'Sign in for Plus' });
+          await signIn.waitFor({ timeout: 20000 });
+          await page.waitForFunction(() => [...document.querySelectorAll('a')].some(a => a.textContent === 'Sign in for Plus' && a.getAttribute('href').includes('code')), null, { timeout: 10000 }).catch(() => {});
+          const href = await signIn.getAttribute('href');
+          check('signed out: "Sign in for Plus" comes back to the code link', href === '/auth?returnTo=' + encodeURIComponent('/pricing?code=ROAMLY99'), href);
+          check('signed out: no code check is sent before signing in', coupons.length === 0, `${coupons.length} requests`);
+          await signIn.click();
+          await page.waitForURL(u => u.pathname === '/auth', { timeout: 20000 });
+          check('the sign-in page keeps the way back', new URL(page.url()).searchParams.get('returnTo') === '/pricing?code=ROAMLY99', new URL(page.url()).search);
+
+          // The live JavaScript has the code field and calls the code-check route.
+          const seen = new Set(), queue = [];
+          const add = u => { const url = new URL(u, site); if (url.origin === site && url.pathname.endsWith('.js') && !seen.has(url.href)) { seen.add(url.href); queue.push(url.href); } };
+          try { const m = await (await fetch(site + '/.vite/manifest.json')).json(); for (const e of Object.values(m)) if (e.file) add('/' + e.file); } catch {}
+          let ui = null;
+          while (queue.length && seen.size < 400 && !ui) {
+            const url = queue.shift(), code = await (await fetch(url)).text();
+            if (code.includes('/api/billing/') && code.includes('Launch code')) ui = url;
+            for (const [, u] of code.matchAll(/["'`]((?:\.{1,2}\/|\/assets\/)[\w./-]+\.js)["'`]/g)) add(new URL(u, url).href);
+          }
+          check('live pricing code has the launch-code field', !!ui, ui ? new URL(ui).pathname : `not found in ${seen.size} chunks`);
+          await browser.close();
+          process.exit(failed ? 1 : 0);
+          EOF2
+          node smoke.mjs
