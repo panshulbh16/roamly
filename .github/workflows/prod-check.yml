@@ -26,13 +26,16 @@ jobs:
           if npx wrangler secret list --name roamly 2>/dev/null | grep -q '"DATA_ENCRYPTION_KEY"'; then echo "DATA_ENCRYPTION_KEY: set"; else echo "DATA_ENCRYPTION_KEY: NOT set"; fi
       - name: How much personal data is encrypted (counts only)
         run: |
-          Q="SELECT 'trips.payload' f,count(*) total,coalesce(sum(payload LIKE 'enc1:%'),0) sealed FROM trips
-          UNION ALL SELECT 'trip_shares.payload',count(*),coalesce(sum(payload LIKE 'enc1:%'),0) FROM trip_shares
-          UNION ALL SELECT 'search_history.intake',count(*),coalesce(sum(intake LIKE 'enc1:%'),0) FROM search_history
-          UNION ALL SELECT 'waitlist.email',count(*),coalesce(sum(email LIKE 'enc1:%'),0) FROM waitlist
-          UNION ALL SELECT 'outings.payload',count(*),coalesce(sum(payload LIKE 'enc1:%'),0) FROM outings
-          UNION ALL SELECT 'outings.meeting',count(*),coalesce(sum(meeting LIKE 'enc1:%'),0) FROM outings
-          UNION ALL SELECT 'outing_requests.name',count(*),coalesce(sum(name LIKE 'enc1:%'),0) FROM outing_requests
-          UNION ALL SELECT 'outing_invites.email',count(*),coalesce(sum(email LIKE 'enc1:%'),0) FROM outing_invites"
-          npx wrangler d1 execute roamly-db --remote --json --command "$Q" 2>/dev/null \
-            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const out=JSON.parse(s);if(!Array.isArray(out)){console.log("query error:",out.error?.text??"unknown");for(const n of out.error?.notes??[])console.log(" -",n.text);process.exit(1);}for(const r of out[0].results)console.log(`${r.f.padEnd(24)} ${String(r.sealed).padStart(5)} of ${String(r.total).padStart(5)} encrypted`);})'
+          cat > count.mjs <<'EOF'
+          import { execFileSync } from 'node:child_process';
+          const cols = [['trips','payload'],['trip_shares','payload'],['search_history','intake'],['waitlist','email'],['outings','payload'],['outings','meeting'],['outing_requests','name'],['outing_invites','email']];
+          const sql = 'SELECT ' + cols.map(([t, c], i) => `(SELECT count(*) FROM ${t}) t${i}, (SELECT count(*) FROM ${t} WHERE ${c} LIKE 'enc1:%') s${i}`).join(', ');
+          let raw;
+          try { raw = execFileSync('npx', ['wrangler', 'd1', 'execute', 'roamly-db', '--remote', '--json', '--command', sql], { stdio: ['ignore', 'pipe', 'ignore'] }); }
+          catch (e) { raw = e.stdout; }
+          const out = JSON.parse(raw.toString());
+          if (!Array.isArray(out)) { console.log('query error:', out.error?.text); for (const n of out.error?.notes ?? []) console.log(' -', n.text); process.exit(1); }
+          const row = out[0].results[0];
+          cols.forEach(([t, c], i) => console.log(`${(t + '.' + c).padEnd(24)} ${String(row['s' + i]).padStart(5)} of ${String(row['t' + i]).padStart(5)} encrypted`));
+          EOF
+          node count.mjs
