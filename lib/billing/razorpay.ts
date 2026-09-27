@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
 import { ApiError, db } from "@/lib/server/context";
+import { seal } from "@/lib/server/vault";
 const config = () => env as unknown as Record<string,string|undefined>;
 // ponytail: Plus is a 30-day pass bought once via Razorpay Orders (same as Opportunity Hunter), no auto-renewal.
 // Orders work with international cards and PayPal; Razorpay subscriptions support neither USD nor PayPal here.
@@ -26,7 +27,7 @@ async function razorpay(path:string, data:unknown) {
 export type SubscriptionRow={owner:string;subscription_id:string|null;status:string;current_end:number;paid_count:number;checked_at:number};
 export async function membership(owner:string) { return db().prepare("SELECT * FROM subscriptions WHERE owner=?").bind(owner).first<SubscriptionRow>(); }
 export function hasPlus(row:SubscriptionRow|null) { return !!row && row.status==="active" && row.paid_count>0 && row.current_end>Math.floor(Date.now()/1000); }
-export async function createOrder(owner:string,currency:BillingCurrency) {
+export async function createOrder(owner:string,currency:BillingCurrency,email:string) {
   const {amount}=PRICES[currency];
   // Each checkout creates a Razorpay order; a daily cap keeps a script from flooding the account with them.
   const attempt=await db().prepare("INSERT INTO usage (key,count) VALUES (?,1) ON CONFLICT(key) DO UPDATE SET count=count+1 WHERE count<20 RETURNING count")
@@ -34,7 +35,7 @@ export async function createOrder(owner:string,currency:BillingCurrency) {
   if(!attempt) throw new ApiError(429,"Too many checkout attempts today. Please try again tomorrow.");
   const order=await razorpay("orders",{amount,currency,receipt:"roamly-"+Date.now(),notes:{roamly_owner:owner,plan:"plus"}});
   if(!/^order_[a-zA-Z0-9]+$/.test(order.id??"")) throw new ApiError(502,"Could not prepare checkout. Please try again.");
-  await db().prepare("INSERT INTO orders (id,owner,amount,currency) VALUES (?,?,?,?)").bind(order.id,owner,amount,currency).run();
+  await db().prepare("INSERT INTO orders (id,owner,amount,currency,email) VALUES (?,?,?,?,?)").bind(order.id,owner,amount,currency,email?await seal(email,"orders.email"):null).run();
   return {orderId:order.id as string,amount,currency,keyId:config().RAZORPAY_KEY_ID!};
 }
 async function hmacValid(secret:string,data:Uint8Array,signature:string) {
@@ -60,6 +61,20 @@ export async function markOrderPaid(orderId:string,paymentId:string) {
         current_end=max(subscriptions.current_end,?)+?,paid_count=subscriptions.paid_count+1,checked_at=excluded.checked_at`)
       .bind(now,days,now,orderId,now,days),
     db().prepare("UPDATE orders SET status='paid',payment_id=? WHERE id=? AND status='created'").bind(paymentId,orderId),
+  ]);
+  return Number(flip.meta.changes??0)>0;
+}
+/**
+ * Takes back the 30 days a fully refunded order bought (webhook refund.processed). Like markOrderPaid, only the call
+ * that flips the order paid -> refunded counts, so a replayed event can't take more. Other passes stay: someone who
+ * bought twice and refunds one keeps the other 30 days.
+ */
+export async function markOrderRefunded(orderId:string,paymentId:string) {
+  const now=Math.floor(Date.now()/1000),days=PASS_DAYS*86400;
+  const [,flip]=await db().batch([
+    db().prepare(`UPDATE subscriptions SET current_end=current_end-?,paid_count=max(paid_count-1,0),checked_at=?
+      WHERE owner=(SELECT owner FROM orders WHERE id=? AND payment_id=? AND status='paid')`).bind(days,now,orderId,paymentId),
+    db().prepare("UPDATE orders SET status='refunded' WHERE id=? AND payment_id=? AND status='paid'").bind(orderId,paymentId),
   ]);
   return Number(flip.meta.changes??0)>0;
 }

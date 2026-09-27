@@ -15,7 +15,18 @@ No subscription plan is needed.
 
 ## Webhook
 
-In Razorpay → Webhooks, add `https://heyroamly.com/api/billing/webhook` (the older `roamly.panshulbh16.workers.dev` webhook URL keeps working because `/api/` is not redirected) for the `order.paid` event with the webhook secret above. Razorpay allows one webhook per URL, and a webhook's secret can't be edited; to change the secret, delete the webhook and create it again with the same value saved as `RAZORPAY_WEBHOOK_SECRET`. Checkout runs in redirect mode with `callback_url` set to `<site>/api/billing/callback`: Razorpay posts the result there, the route verifies the payment signature, grants the pass and redirects the buyer to `/pricing?checkout=activated` (or `failed`/`unverified`), where Plus is celebrated. This works on phones, in-app browsers and the installed app, where paying leaves the page and a JavaScript handler would never run. The webhook is the backstop for buyers who never make it back. Both are idempotent: only the first call that flips an order from `created` to `paid` grants 30 days.
+In Razorpay → Webhooks, add `https://heyroamly.com/api/billing/webhook` (the older `roamly.panshulbh16.workers.dev` webhook URL keeps working because `/api/` is not redirected) for the `order.paid` and `refund.processed` events with the webhook secret above. Razorpay allows one webhook per URL, and a webhook's secret can't be edited; to change the secret, delete the webhook and create it again with the same value saved as `RAZORPAY_WEBHOOK_SECRET`. Checkout runs in redirect mode with `callback_url` set to `<site>/api/billing/callback`: Razorpay posts the result there, the route verifies the payment signature, grants the pass and redirects the buyer to `/pricing?checkout=activated` (or `failed`/`unverified`), where Plus is celebrated. This works on phones, in-app browsers and the installed app, where paying leaves the page and a JavaScript handler would never run. The webhook is the backstop for buyers who never make it back. Both are idempotent: only the first call that flips an order from `created` to `paid` grants 30 days.
+
+## Receipts and refunds
+
+Each purchase emails the buyer a receipt: amount, order and payment IDs, and the date Plus runs until. It's sent once, by whichever of the callback or webhook records the payment first. Receipts use the invite email settings (`RESEND_API_KEY`, `EMAIL_FROM`); without them, payments still work and no receipt is sent. A receipt is not a tax invoice.
+
+To refund, use Razorpay → Payments → Refund. When Razorpay reports the refund (`refund.processed`):
+
+- **Full refund:** removes the 30 days that payment bought and emails the buyer. If they had bought another pass, that pass is kept.
+- **Partial refund:** leaves the pass unchanged.
+
+Replayed events change nothing.
 
 ## PayPal
 

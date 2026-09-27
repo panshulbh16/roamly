@@ -71,6 +71,13 @@
       "when": 1790515577636,
       "tag": "0009_sealed_invite_emails",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1790520179441,
+      "tag": "0010_order_receipts",
+      "breakpoints": true
     }
   ]
 }

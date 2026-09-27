@@ -47,7 +47,8 @@ export const subscriptions = sqliteTable("subscriptions", {
   checkedAt: integer("checked_at").notNull().default(0),
 }, t => [index("idx_subscription_id").on(t.subscriptionId)]);
 
-// One-time Plus passes (Razorpay Orders); paying flips status created -> paid exactly once.
+// One-time Plus passes (Razorpay Orders); paying flips status created -> paid exactly once, and a full refund
+// flips paid -> refunded exactly once. email (sealed) is where the receipt goes.
 export const orders = sqliteTable("orders", {
   id: text("id").primaryKey(),
   owner: text("owner").notNull(),
@@ -55,6 +56,7 @@ export const orders = sqliteTable("orders", {
   currency: text("currency").notNull(),
   status: text("status").notNull().default("created"),
   paymentId: text("payment_id"),
+  email: text("email"),
 }, t => [index("idx_orders_owner").on(t.owner)]);
 
 export const outings = sqliteTable("outings", {
