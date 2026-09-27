@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { ArrowRight, Check } from "lucide-react";
 import { toast } from "sonner";
@@ -10,6 +10,9 @@ import { api } from "@/lib/client/api";
 export function Pricing({ signedIn, billingEnabled = false, price = "₹499" }: { signedIn: boolean; billingEnabled?: boolean; price?: string }) {
   const [busy, setBusy] = useState(false);
   const [joined, setJoined] = useState(false);
+  // Signing in comes back to a shared launch-code link (/pricing?code=…) with the code still on it.
+  const linked = useSyncExternalStore(() => () => {}, () => new URLSearchParams(location.search).get("code"), () => null);
+  const signIn = "/auth?returnTo=" + encodeURIComponent(linked ? "/pricing?code=" + encodeURIComponent(linked) : "/pricing");
   return <main className="workspace">
     <Toaster richColors />
         <>
@@ -60,7 +63,7 @@ export function Pricing({ signedIn, billingEnabled = false, price = "₹499" }: 
               <p className="subtext">
                 20 AI plans per day. Host city-based trips with Travel Together, publish your own itinerary and approve travellers. Replace individual days, edit your itinerary, share snapshots and export a PDF. {billingEnabled ? "A 30-day pass paid once through Razorpay. Cards, UPI and, outside India, PayPal. No auto-renewal." : "Checkout is not open yet. No payment is collected."}
               </p>
-              {billingEnabled ? (signedIn ? <BillingControls price={price} /> : <Link href="/auth?returnTo=%2Fpricing" className="primary">Sign in for Plus</Link>) : !signedIn ? <Link href="/auth?returnTo=%2Fpricing" className="primary" style={{ marginTop: 28, width: "100%" }}>Sign in to join the Plus waitlist<ArrowRight size={15} /></Link> : <button
+              {billingEnabled ? (signedIn ? <BillingControls price={price} /> : <Link href={signIn} className="primary">Sign in for Plus</Link>) : !signedIn ? <Link href="/auth?returnTo=%2Fpricing" className="primary" style={{ marginTop: 28, width: "100%" }}>Sign in to join the Plus waitlist<ArrowRight size={15} /></Link> : <button
                 disabled={busy || joined}
                 className="primary"
                 style={{ marginTop: 28, width: "100%" }}

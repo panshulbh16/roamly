@@ -48,7 +48,8 @@ export const subscriptions = sqliteTable("subscriptions", {
 }, t => [index("idx_subscription_id").on(t.subscriptionId)]);
 
 // One-time Plus passes (Razorpay Orders); paying flips status created -> paid exactly once, and a full refund
-// flips paid -> refunded exactly once. email (sealed) is where the receipt goes.
+// flips paid -> refunded exactly once. email (sealed) is where the receipt goes. coupon is the launch code used,
+// if any; created_at (unix seconds) lets an open checkout hold a launch-code place for a while.
 export const orders = sqliteTable("orders", {
   id: text("id").primaryKey(),
   owner: text("owner").notNull(),
@@ -57,7 +58,9 @@ export const orders = sqliteTable("orders", {
   status: text("status").notNull().default("created"),
   paymentId: text("payment_id"),
   email: text("email"),
-}, t => [index("idx_orders_owner").on(t.owner)]);
+  coupon: text("coupon"),
+  createdAt: integer("created_at"),
+}, t => [index("idx_orders_owner").on(t.owner), index("idx_orders_coupon").on(t.coupon, t.status)]);
 
 export const outings = sqliteTable("outings", {
   id: text("id").primaryKey(), owner: text("owner").notNull(),

@@ -871,6 +871,22 @@ textarea {
   margin: 20px 0;
   flex-wrap: wrap;
 }
+.launch-code {
+  margin: 14px 0 12px;
+}
+.launch-code > div {
+  display: flex;
+  gap: 8px;
+}
+.launch-code input {
+  flex: 1;
+  min-width: 0;
+  text-transform: uppercase;
+}
+.launch-code .form-note {
+  margin: 0;
+  font-weight: 400;
+}
 .secondary-button {
   display: inline-flex;
   align-items: center;
