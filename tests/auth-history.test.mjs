@@ -411,13 +411,28 @@ test('Razorpay Plus pass: currency by country, verified callback and webhook, id
     assert.equal((await (await app.checkout.POST(withCountry('US'))).json()).currency,'INR');
     context.env.RAZORPAY_INTERNATIONAL='true';
     assert.equal(app.billing.hasPlus(await app.billing.membership('subscriber')),false);
-    // Forged callback is rejected and grants nothing.
-    assert.equal((await app.confirm.POST(req('/api/billing/confirm',{orderId:inr.orderId,paymentId:'pay_1',signature:'0'.repeat(64)}))).status,400);
+    // Razorpay posts checkout's result as a form from its own site, and the buyer's browser follows the redirect back.
+    const callback=async(body,headers={})=>{const r=await app.billingCallback.POST(new Request(origin+'/api/billing/callback',{method:'POST',headers:{origin:'https://api.razorpay.com',...headers},body}));assert.equal(r.status,303);return r.headers.get('location');};
+    const returned=outcome=>origin+'/pricing?checkout='+outcome;
+    // Forged, empty and malformed callbacks are rejected and grant nothing, but still bring the buyer back.
+    assert.equal(await callback(new URLSearchParams({razorpay_order_id:inr.orderId,razorpay_payment_id:'pay_1',razorpay_signature:'0'.repeat(64)})),returned('unverified'));
+    assert.equal(await callback(new URLSearchParams()),returned('unverified'));
+    assert.equal(await callback(JSON.stringify({razorpay_order_id:inr.orderId}),{'Content-Type':'application/json'}),returned('unverified'));
+    // A declined payment (redirect mode posts Razorpay's error fields) is reported as failed.
+    assert.equal(await callback(new URLSearchParams({'error[code]':'BAD_REQUEST_ERROR','error[description]':'Payment failed','error[metadata]':JSON.stringify({order_id:inr.orderId,payment_id:'pay_0'})})),returned('failed'));
     assert.equal(app.billing.hasPlus(await app.billing.membership('subscriber')),false);
-    // Another signed-in user confirming grants to the order's owner, not the caller.
+    const signed=async(order,payment)=>new URLSearchParams({razorpay_order_id:order,razorpay_payment_id:payment,razorpay_signature:await sign(settings.RAZORPAY_KEY_SECRET,order+'|'+payment)});
+    // Verified but storage failed: the buyer hears the payment arrived; the order stays open for the webhook.
+    const spare=await (await app.checkout.POST(withCountry('IN'))).json(),batch=context.env.DB.batch;
+    context.env.DB.batch=async()=>{throw Error('D1 unavailable');};
+    try{assert.equal(await callback(await signed(spare.orderId,'pay_spare')),returned('pending'));}finally{context.env.DB.batch=batch;}
+    assert.equal(sql.prepare('SELECT status FROM orders WHERE id=?').get(spare.orderId).status,'created');
+    assert.equal(app.billing.hasPlus(await app.billing.membership('subscriber')),false);
+    // The cross-site POST carries no session cookie; a signed result grants to the order's owner, never to whoever is signed in.
+    context.headers=new Headers();
+    const good=await signed(inr.orderId,'pay_1');
+    assert.equal(await callback(good),returned('activated'));
     user('someone-else');
-    const good={orderId:inr.orderId,paymentId:'pay_1',signature:await sign(settings.RAZORPAY_KEY_SECRET,inr.orderId+'|pay_1')};
-    assert.equal((await app.confirm.POST(req('/api/billing/confirm',good))).status,200);
     assert.equal(app.billing.hasPlus(await app.billing.membership('someone-else')),false);
     user('subscriber');
     const first=await app.billing.membership('subscriber');
@@ -428,7 +443,7 @@ test('Razorpay Plus pass: currency by country, verified callback and webhook, id
     assert.equal((await app.webhook.POST(bad)).status,401);
     const hook=async body=>new Request(origin+'/api/billing/webhook',{method:'POST',headers:{'x-razorpay-signature':await sign(settings.RAZORPAY_WEBHOOK_SECRET,body)},body});
     assert.equal((await app.webhook.POST(await hook(event))).status,200);
-    assert.equal((await app.confirm.POST(req('/api/billing/confirm',good))).status,200);
+    assert.equal(await callback(good),returned('activated'));
     assert.equal((await app.billing.membership('subscriber')).current_end,first.current_end);
     // A second pass (via webhook only, tab closed) stacks on top of the first.
     assert.equal((await app.webhook.POST(await hook(JSON.stringify({event:'order.paid',payload:{order:{entity:{id:usd.orderId}},payment:{entity:{id:'pay_2'}}}})))).status,200);
