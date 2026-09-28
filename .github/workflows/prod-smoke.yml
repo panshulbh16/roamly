@@ -1,0 +1,20 @@
+# Temporary: what a visitor outside India is offered on the live pricing page (GitHub's runners are in the US).
+# Public page reads only; nothing is bought. Removed right after.
+name: Production check (international pricing)
+on:
+  push:
+    branches: [claude/modest-planck-igiaoe]
+permissions:
+  contents: read
+jobs:
+  abroad:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: What a US visitor sees on /pricing
+        run: |
+          echo "Cloudflare sees this runner in: $(curl -sS https://heyroamly.com/cdn-cgi/trace | grep '^loc=' | cut -d= -f2)"
+          page=$(curl -sS https://heyroamly.com/pricing)
+          for label in '₹499 / 30 days' '$10 / 30 days' 'through Razorpay. Cards and UPI' 'by card through Stripe' 'through Dodo Payments' 'PayPal'; do
+            if printf '%s' "$page" | grep -qF "$label"; then echo "shown:     $label"; else echo "not shown: $label"; fi
+          done
