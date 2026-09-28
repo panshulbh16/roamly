@@ -42,8 +42,9 @@ const REDIRECT_HOSTS = new Set(["www.heyroamly.com", "roamly.panshulbh16.workers
 // The API only serves Roamly's own pages, which send CLIENT_HEADER (lib/client/api.ts). A typed-in API address,
 // another site or a bare script gets the same 404 as a missing route. The only doors from outside are the payment
 // providers': Razorpay's checkout callback (a cross-site form post) and webhook, each checking Razorpay's signature,
-// and Stripe's return page (a link from Stripe Checkout, confirmed with Stripe's API) and signed webhook.
-const EXTERNAL_API = new Set(["/api/billing/callback", "/api/billing/webhook", "/api/billing/stripe/return", "/api/billing/stripe/webhook"]);
+// and Stripe's and Dodo Payments' return pages (links from their checkouts, confirmed with their APIs) and signed webhooks.
+const EXTERNAL_API = new Set(["/api/billing/callback", "/api/billing/webhook", "/api/billing/stripe/return", "/api/billing/stripe/webhook",
+  "/api/billing/dodo/return", "/api/billing/dodo/webhook"]);
 function hiddenApi(request: Request, pathname: string) {
   let path = pathname;
   try { path = decodeURIComponent(pathname); } catch { /* malformed: judged as sent */ }

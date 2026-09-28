@@ -845,6 +845,94 @@ test('Stripe: buyers outside India pay $10 on Stripe Checkout; payment is confir
   }
 });
 
+test('Dodo Payments: buyers outside India pay on Dodo’s page; the pass needs Dodo to confirm; refunds take it back',async()=>{
+  jar.clear();user('dodo-buyer');const original=globalThis.fetch;
+  const secret=crypto.getRandomValues(new Uint8Array(24));
+  const settings={RAZORPAY_ENABLED:'true',RAZORPAY_KEY_ID:'fixture',RAZORPAY_KEY_SECRET:'fixture-secret',RAZORPAY_WEBHOOK_SECRET:'webhook-fixture',DODO_ENABLED:'true',DODO_API_KEY:'dodo_key_fixture',DODO_WEBHOOK_SECRET:'whsec_'+Buffer.from(secret).toString('base64'),DODO_PRODUCT_ID:'pdt_plus',DODO_MODE:'test',RESEND_API_KEY:'re_test',EMAIL_FROM:'Roamly <billing@example.test>',DATA_ENCRYPTION_KEY:SEAL_KEY};
+  Object.assign(context.env,settings);
+  const sessions={},payments={},bodies=[],mails=[];let n=0,m=0;
+  globalThis.fetch=async(url,options={})=>{
+    const u=new URL(url);
+    if(u.host==='test.dodopayments.com'){
+      assert.equal(new Headers(options.headers).get('authorization'),'Bearer dodo_key_fixture');
+      if(options.method==='POST'&&u.pathname==='/checkouts'){const body=JSON.parse(options.body);bodies.push(body);const id='cks_'+(++n);sessions[id]={id,payment_id:null,payment_status:null,order:body.metadata.roamly_order};
+        return Response.json({session_id:id,checkout_url:'https://test.checkout.dodopayments.com/session/'+id});}
+      const [,kind,id]=u.pathname.split('/'),found=kind==='checkouts'?sessions[id]:payments[id];
+      return found?Response.json(found):Response.json({code:'NOT_FOUND'},{status:404});
+    }
+    const body=JSON.parse(options.body);
+    if(u.host==='api.resend.com'){mails.push(body);return Response.json({id:'email_'+mails.length});}
+    if(u.pathname==='/v1/orders')return Response.json({id:'order_dodoflow'+(++m)+Date.now(),amount:body.amount,currency:body.currency});
+    throw Error('Unexpected request '+url);
+  };
+  const checkout=async(country,code)=>{const r=req('/api/billing/checkout',code?{code}:{});if(country)r.headers.set('cf-ipcountry',country);const res=await app.checkout.POST(r);return {status:res.status,body:await res.json()};};
+  const back=async(order,payment)=>(await app.dodoReturn.GET(new Request(origin+'/api/billing/dodo/return?order='+order+(payment?'&payment_id='+payment+'&status=succeeded':'')))).headers.get('location');
+  // Standard Webhooks, as Dodo signs: base64 HMAC-SHA256 of "id.timestamp.body" with the secret's base64-decoded bytes.
+  const signature=async(id,ts,body,key=secret)=>{const k=await crypto.subtle.importKey('raw',key,{name:'HMAC',hash:'SHA-256'},false,['sign']);return 'v1,'+Buffer.from(await crypto.subtle.sign('HMAC',k,new TextEncoder().encode(`${id}.${ts}.${body}`))).toString('base64');};
+  const hook=async(event,{key=secret,ts=Math.floor(Date.now()/1000),extra=''}={})=>{const body=JSON.stringify(event),id='msg_'+Math.random().toString(36).slice(2);
+    return (await app.dodoWebhook.POST(new Request(origin+'/api/billing/dodo/webhook',{method:'POST',headers:{'webhook-id':id,'webhook-timestamp':String(ts),'webhook-signature':extra+await signature(id,ts,body,key)},body}))).status;};
+  const pay=(order,id,fields={})=>payments[id]={payment_id:id,status:'succeeded',metadata:{roamly_order:order,roamly_owner:'dodo-buyer',plan:'plus'},product_cart:[{product_id:'pdt_plus',quantity:1}],
+    checkout_session_id:Object.values(sessions).find(s=>s.order===order).id,total_amount:1190,currency:'EUR',refund_status:null,customer:{email:'dodo-buyer@example.test'},...fields};
+  const pass=()=>({...sql.prepare("SELECT paid_count,current_end FROM subscriptions WHERE owner='dodo-buyer'").get()});
+  const order=o=>sql.prepare('SELECT * FROM orders WHERE id=?').get(o);
+  try{
+    // Who pays where: India, unknown countries and the ₹99 code stay on Razorpay; elsewhere goes to Dodo, even if Stripe is set up too.
+    assert.deepEqual([(await checkout('IN')).body.provider,(await checkout()).body.provider,(await checkout('US','ROAMLY99')).body.amount],['razorpay','razorpay',9900]);
+    Object.assign(context.env,{STRIPE_ENABLED:'true',STRIPE_SECRET_KEY:'sk_test_fixture',STRIPE_WEBHOOK_SECRET:'whsec_x'});
+    const a=await checkout('FR');
+    assert.deepEqual(a,{status:200,body:{provider:'dodo',url:'https://test.checkout.dodopayments.com/session/cks_1'}});
+    const A=bodies[0].metadata.roamly_order;assert.match(A,/^dodo_[a-f0-9]{32}$/);
+    assert.deepEqual(bodies[0],{product_cart:[{product_id:'pdt_plus',quantity:1}],customer:{email:'dodo-buyer@example.test'},return_url:origin+'/api/billing/dodo/return?order='+A,cancel_url:origin+'/pricing?checkout=cancelled',metadata:{roamly_order:A,roamly_owner:'dodo-buyer',plan:'plus'}});
+    const row=order(A);assert.deepEqual([row.provider,row.checkout_id,row.amount,row.currency,row.status],['dodo','cks_1',1000,'USD','created']);assert.match(row.email,/^enc1:/);
+    // The return address proves nothing: unknown orders, no payment yet, another order's payment, another product, failed ones.
+    assert.equal(await back('dodo_'+'0'.repeat(32)),origin+'/pricing?checkout=unverified');assert.equal(await back('nope'),origin+'/pricing?checkout=unverified');
+    assert.equal(await back(A),origin+'/pricing?checkout=pending','Dodo has no payment for this checkout yet');
+    assert.equal((await checkout('US')).body.provider,'dodo');const B=bodies[1].metadata.roamly_order;
+    pay(B,'pay_other');assert.equal(await back(A,'pay_other'),origin+'/pricing?checkout=unverified','a payment for another order');
+    pay(A,'pay_wrongproduct',{product_cart:[{product_id:'pdt_other',quantity:1}]});assert.equal(await back(A,'pay_wrongproduct'),origin+'/pricing?checkout=unverified');
+    pay(A,'pay_failed',{status:'failed'});assert.equal(await back(A,'pay_failed'),origin+'/pricing?checkout=failed');
+    pay(A,'pay_slow',{status:'processing'});assert.equal(await back(A,'pay_slow'),origin+'/pricing?checkout=pending');
+    assert.equal(pass().paid_count,undefined,'no pass yet');
+    // Paid (in euros, VAT included): the pass is granted once, the order records what was charged, one receipt.
+    pay(A,'pay_a');
+    assert.equal(await back(A,'pay_a'),origin+'/pricing?checkout=activated');
+    const first=pass();assert.equal(first.paid_count,1);assert.ok(Math.abs(first.current_end-(Date.now()/1000+30*86400))<60);
+    assert.deepEqual([order(A).status,order(A).payment_id,order(A).amount,order(A).currency],['paid','pay_a',1190,'EUR']);
+    assert.equal((await (await app.billingStatus.GET()).json()).plus,true);
+    assert.equal(mails.length,1);assert.equal(mails[0].to,'dodo-buyer@example.test');assert.ok(mails[0].text.includes('Amount paid: €11.90'),mails[0].text);
+    assert.equal(await back(A,'pay_a'),origin+'/pricing?checkout=activated','reload');
+    assert.equal(await hook({type:'payment.succeeded',data:payments.pay_a}),200);
+    assert.deepEqual([pass().paid_count,mails.length],[1,1]);
+    // Webhooks must be signed with the webhook secret, recently; a rotated secret's extra signature is fine.
+    assert.equal(await hook({type:'payment.succeeded',data:payments.pay_a},{key:crypto.getRandomValues(new Uint8Array(24))}),400);
+    assert.equal(await hook({type:'payment.succeeded',data:payments.pay_a},{ts:Math.floor(Date.now()/1000)-600}),400,'replayed after 10 minutes');
+    assert.equal(await hook({type:'noop'},{extra:'v1,'+Buffer.alloc(32).toString('base64')+' '}),200);
+    // A buyer who pays and never comes back: the webhook grants it. Coming back without payment_id asks Dodo's checkout.
+    pay(B,'pay_b',{total_amount:1000,currency:'USD'});sessions.cks_2.payment_id='pay_b';
+    assert.equal(await hook({type:'payment.succeeded',data:payments.pay_b}),200);
+    assert.deepEqual([pass().paid_count,pass().current_end,mails.length],[2,first.current_end+30*86400,2]);
+    assert.equal(await back(B),origin+'/pricing?checkout=activated');assert.equal(mails.length,2);
+    // Refunds: partial ones and unknown payments change nothing; full ones take back exactly that pass, once.
+    assert.equal(await hook({type:'refund.succeeded',data:{refund_id:'rf_1',payment_id:'pay_a',is_partial:true,amount:300,status:'succeeded'}}),200);
+    assert.equal(await hook({type:'refund.succeeded',data:{refund_id:'rf_x',payment_id:'pay_unknown',is_partial:false,status:'succeeded'}}),200);
+    assert.deepEqual([pass().paid_count,mails.length],[2,2]);
+    assert.equal(await hook({type:'refund.succeeded',data:{refund_id:'rf_2',payment_id:'pay_b',is_partial:false,amount:1000,status:'succeeded'}}),200);
+    assert.equal(await hook({type:'refund.succeeded',data:{refund_id:'rf_2',payment_id:'pay_b',is_partial:false,amount:1000,status:'succeeded'}}),200,'replayed');
+    assert.deepEqual(pass(),{paid_count:1,current_end:first.current_end});assert.equal(order(B).status,'refunded');
+    assert.equal(mails.length,3);assert.equal(mails[2].subject,'Your Roamly Plus refund');assert.ok(mails[2].text.includes('Refunded: $10.00'));
+    // Partial refunds that add up to the whole payment count as a full refund.
+    payments.pay_a.refund_status='full';
+    assert.equal(await hook({type:'refund.succeeded',data:{refund_id:'rf_3',payment_id:'pay_a',is_partial:true,amount:890,status:'succeeded'}}),200);
+    assert.equal(pass().paid_count,0);assert.ok(mails[3].text.includes('Refunded: €11.90'));
+    // Dodo switched off: Stripe (still set up) takes buyers abroad, and Dodo's webhook accepts nothing.
+    delete context.env.DODO_ENABLED;
+    assert.equal(app.billing.paymentRoute('FR').provider,'stripe');assert.equal(await hook({type:'noop'}),400);
+  } finally {
+    globalThis.fetch=original;for(const k of [...Object.keys(settings),'STRIPE_ENABLED','STRIPE_SECRET_KEY','STRIPE_WEBHOOK_SECRET'])delete context.env[k];context.headers=new Headers();
+    sql.exec("DELETE FROM orders WHERE owner='dodo-buyer'");sql.exec("DELETE FROM subscriptions WHERE owner='dodo-buyer'");sql.exec("DELETE FROM usage WHERE key LIKE 'checkout:dodo-buyer:%'");
+  }
+});
+
 test('launch code ROAMLY99: ₹99 once per account, for the first 200 accounts, never oversold',async()=>{
   jar.clear();const original=globalThis.fetch;
   const settings={RAZORPAY_ENABLED:'true',RAZORPAY_KEY_ID:'fixture',RAZORPAY_KEY_SECRET:'fixture-secret',RAZORPAY_WEBHOOK_SECRET:'webhook-fixture',RAZORPAY_INTERNATIONAL:'true',RESEND_API_KEY:'re_test',EMAIL_FROM:'Roamly <billing@example.test>',DATA_ENCRYPTION_KEY:SEAL_KEY};

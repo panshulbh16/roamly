@@ -5,7 +5,8 @@ import { toast } from "sonner";
 import { announcePlus } from "./plus";
 import { api } from "@/lib/client/api";
 type Status={plus:boolean;until:number;usage?:{limit:number;used:number;remaining:number;resetsAt:string}};
-type Order={provider?:"razorpay";orderId:string;amount:number;currency:string;keyId:string;email?:string}|{provider:"stripe";url:string};
+type Order={provider?:"razorpay";orderId:string;amount:number;currency:string;keyId:string;email?:string}|{provider:"stripe"|"dodo";url:string};
+export type Provider="Razorpay"|"Stripe"|"Dodo Payments";
 type Offer={code:string;label:string;left:number;places:number};
 type Razorpay=new(options:object)=>{open():void;on(event:"payment.failed",cb:(r:{error:{description:string}})=>void):void};
 // What /api/billing/callback reports in ?checkout= when it sends the buyer back. Fixed text, so the address can't put words on the page.
@@ -23,7 +24,7 @@ const loadCheckout=()=>new Promise<Razorpay>((resolve,reject)=>{
   s.onerror=()=>reject(Error("Couldn't load Razorpay. Check your connection and try again."));
   document.body.appendChild(s);
 });
-export function BillingControls({ price = "₹499", via = "Razorpay" }: { price?: string; via?: "Razorpay" | "Stripe" }) {
+export function BillingControls({ price = "₹499", via = "Razorpay" }: { price?: string; via?: Provider }) {
   const [status,setStatus]=useState<Status|null>(null),[busy,setBusy]=useState(false),[message,setMessage]=useState("");
   const [code,setCode]=useState(""),[offer,setOffer]=useState<Offer|null>(null),[codeNote,setCodeNote]=useState("");
   async function request(path:string,method="GET",payload?:object) {
@@ -46,11 +47,11 @@ export function BillingControls({ price = "₹499", via = "Razorpay" }: { price?
   async function buy(){
     setBusy(true);setMessage("");
     try{
-      // Razorpay's script loads while the order is made; Stripe buyers (the ₹99 code is always Razorpay) don't need it.
-      const script=via==="Stripe"&&!offer?null:loadCheckout();script?.catch(()=>{});
+      // Razorpay's script loads while the order is made; Stripe and Dodo buyers (the ₹99 code is always Razorpay) don't need it.
+      const script=via!=="Razorpay"&&!offer?null:loadCheckout();script?.catch(()=>{});
       const order:Order=await request("checkout","POST",offer?{code:offer.code}:{});
-      // Stripe Checkout is a page of its own; it sends the buyer back through /api/billing/stripe/return.
-      if(order.provider==="stripe"){window.location.assign(order.url);return;}
+      // Stripe's and Dodo's checkouts are pages of their own; they send the buyer back through /api/billing/<provider>/return.
+      if("url" in order){window.location.assign(order.url);return;}
       const Checkout=await (script??loadCheckout());
       const checkout=new Checkout({key:order.keyId,order_id:order.orderId,amount:order.amount,currency:order.currency,name:"Roamly",description:"Plus · 30 days",prefill:{email:order.email},theme:{color:"#2f5d46"},
         // Razorpay posts the result to the server, which grants the pass and redirects back here. A JS handler never
@@ -78,7 +79,7 @@ export function BillingControls({ price = "₹499", via = "Razorpay" }: { price?
       <div><input id="launch-code" value={code} placeholder="Have a code?" autoComplete="off" autoCapitalize="characters" spellCheck={false} maxLength={40}
         onChange={e=>{setCode(e.target.value);setOffer(null);setCodeNote("");}}/>
         <button type="submit" className="secondary-button" disabled={busy||!status||!code.trim()||!!offer}>{offer?"Applied":"Apply"}</button></div>
-      {offer?<p role="status" className="form-note">{`${offer.code} applied: Plus for ${offer.label}. ${offer.left} of ${offer.places} launch places left.${via==="Stripe"?" It’s paid in rupees through Razorpay, so it needs an Indian card or UPI.":""}`}</p>:codeNote&&<p role="status" className="form-note">{codeNote}</p>}
+      {offer?<p role="status" className="form-note">{`${offer.code} applied: Plus for ${offer.label}. ${offer.left} of ${offer.places} launch places left.${via!=="Razorpay"?" It’s paid in rupees through Razorpay, so it needs an Indian card or UPI.":""}`}</p>:codeNote&&<p role="status" className="form-note">{codeNote}</p>}
     </form>
     <button className="primary" disabled={busy||!status} onClick={buy}>{busy?"Opening checkout…":status?.plus?`Add 30 days · ${shown}`:`Get Plus · ${shown} for 30 days`}</button>
     {message&&<p role="status">{message}</p>}

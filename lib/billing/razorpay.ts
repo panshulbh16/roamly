@@ -4,7 +4,7 @@ import { seal } from "@/lib/server/vault";
 const config = () => env as unknown as Record<string,string|undefined>;
 // ponytail: Plus is a 30-day pass bought once via Razorpay Orders (same as Opportunity Hunter), no auto-renewal.
 // Orders work with international cards and PayPal; Razorpay subscriptions support neither USD nor PayPal here.
-// When Stripe is set up (lib/billing/stripe.ts), buyers outside India pay through Stripe Checkout instead.
+// When Dodo Payments (lib/billing/dodo.ts) or Stripe (lib/billing/stripe.ts) is set up, buyers outside India pay there.
 export const PASS_DAYS = 30;
 export const PRICES = { INR: { amount: 49900, label: "₹499" }, USD: { amount: 1000, label: "$10" } } as const;
 /**
@@ -35,17 +35,26 @@ export function stripeReady() {
   const c=config();
   return c.STRIPE_ENABLED==="true" && !!c.STRIPE_SECRET_KEY && !!c.STRIPE_WEBHOOK_SECRET;
 }
-/** Plus can be bought (and counts) when either payment provider is set up. */
-export const billingReady = () => razorpayReady() || stripeReady();
+export function dodoReady() {
+  const c=config();
+  return c.DODO_ENABLED==="true" && !!c.DODO_API_KEY && !!c.DODO_WEBHOOK_SECRET && !!c.DODO_PRODUCT_ID;
+}
+/** Plus can be bought (and counts) when any payment provider is set up. */
+export const billingReady = () => razorpayReady() || stripeReady() || dodoReady();
 const abroad = (country: string | null | undefined) => { const code = (country ?? "").toUpperCase(); return !!code && code !== "IN" && code !== "XX"; };
 /** Only a known non-Indian country gets USD; without evidence bill INR rather than overcharge. */
 export function billingCurrency(country: string | null | undefined): BillingCurrency {
   return config().RAZORPAY_INTERNATIONAL === "true" && abroad(country) ? "USD" : "INR";
 }
-export type PaymentRoute = { provider: "razorpay" | "stripe"; currency: BillingCurrency };
-/** Stripe (in USD) for a known non-Indian country when it's set up, or for everyone if only Stripe is; otherwise Razorpay. */
+export type PaymentRoute = { provider: "razorpay" | "stripe" | "dodo"; currency: BillingCurrency };
+/**
+ * Buyers in a known non-Indian country (or everyone, if Razorpay isn't set up) pay $10 through Dodo Payments when it's
+ * set up, else Stripe; otherwise Razorpay.
+ */
 export function paymentRoute(country: string | null | undefined): PaymentRoute {
-  if (stripeReady() && (abroad(country) || !razorpayReady())) return { provider: "stripe", currency: "USD" };
+  const elsewhere = abroad(country) || !razorpayReady();
+  if (elsewhere && dodoReady()) return { provider: "dodo", currency: "USD" };
+  if (elsewhere && stripeReady()) return { provider: "stripe", currency: "USD" };
   return { provider: "razorpay", currency: billingCurrency(country) };
 }
 /** Each checkout creates an order at the provider; a daily cap keeps a script from flooding the account with them. */
