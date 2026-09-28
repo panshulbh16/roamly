@@ -9,7 +9,7 @@ export default async function Page() {
   const route = paymentRoute((await headers()).get("cf-ipcountry")); // the same choice checkout makes
   return (
     <AppShell user={u}>
-      <Pricing signedIn={!!u} billingEnabled={billingReady()} price={PRICES[route.currency].label} via={({ razorpay: "Razorpay", stripe: "Stripe", dodo: "Dodo Payments" } as const)[route.provider]} />
+      <Pricing signedIn={!!u} billingEnabled={billingReady()} price={PRICES[route.currency].label} via={({ razorpay: "Razorpay", stripe: "Stripe", dodo: "Dodo Payments" } as const)[route.provider]} currency={route.currency} />
     </AppShell>
   );
 }

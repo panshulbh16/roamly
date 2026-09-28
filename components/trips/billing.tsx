@@ -7,6 +7,13 @@ import { api } from "@/lib/client/api";
 type Status={plus:boolean;until:number;usage?:{limit:number;used:number;remaining:number;resetsAt:string}};
 type Order={provider?:"razorpay";orderId:string;amount:number;currency:string;keyId:string;email?:string}|{provider:"stripe"|"dodo";url:string};
 export type Provider="Razorpay"|"Stripe"|"Dodo Payments";
+/** The pricing page's line on how the pass is paid for: who takes the money, and with what. */
+export function payWith(via:Provider,currency:"INR"|"USD"){
+  if(via==="Stripe")return "A 30-day pass paid once by card through Stripe. No auto-renewal.";
+  if(via==="Dodo Payments")return "A 30-day pass paid once through Dodo Payments; local tax may be added at checkout. No auto-renewal.";
+  // UPI is rupees only; buyers abroad pay Razorpay in dollars (RAZORPAY_INTERNATIONAL) by card or PayPal.
+  return `A 30-day pass paid once through Razorpay. ${currency==="USD"?"Cards and PayPal":"Cards and UPI"}. No auto-renewal.`;
+}
 type Offer={code:string;label:string;left:number;places:number};
 type Razorpay=new(options:object)=>{open():void;on(event:"payment.failed",cb:(r:{error:{description:string}})=>void):void};
 // What /api/billing/callback reports in ?checkout= when it sends the buyer back. Fixed text, so the address can't put words on the page.

@@ -15,7 +15,7 @@ const compiled=await build({entryPoints:['components/trips/billing.tsx'],bundle:
  b.onLoad({filter:/.*/,namespace:'fixture'},()=>({loader:'js',resolveDir:process.cwd(),contents:`export * from ${JSON.stringify(join(process.cwd(),'node_modules/react/index.js'))}; const h=globalThis.__billingHooks; export const useState=h.useState,useEffect=h.useEffect;`}));
 }}]});
 writeFileSync(join(dir,'fixture.mjs'),compiled.outputFiles[0].text);
-const {BillingControls}=await import(pathToFileURL(join(dir,'fixture.mjs')));
+const {BillingControls,payWith}=await import(pathToFileURL(join(dir,'fixture.mjs')));
 const nodes=n=>!n||typeof n!=='object'?[]:Array.isArray(n)?n.flatMap(nodes):[n,...nodes(n.props?.children)];
 const text=n=>typeof n==='string'||typeof n==='number'?String(n):Array.isArray(n)?n.map(text).join(' '):n?.props?text(n.props.children):'';
 let props={price:'₹499'};const render=()=>{cursor=0;return BillingControls(props);};
@@ -145,4 +145,11 @@ test('outside India with Dodo Payments: checkout goes to Dodo’s page, and the 
  assert.match(shown(),/\$10 for 30 days, paid once through Dodo Payments\./);
  await button(render()).props.onClick();await tick();
  assert.equal(page.assigned,'https://test.checkout.dodopayments.com/session/cks_ui');assert.equal(page.checkout,null,'no Razorpay checkout');
+});
+
+test('the pricing page names the right ways to pay: UPI for rupees, PayPal for dollars through Razorpay',()=>{
+ assert.equal(payWith('Razorpay','INR'),'A 30-day pass paid once through Razorpay. Cards and UPI. No auto-renewal.');
+ assert.equal(payWith('Razorpay','USD'),'A 30-day pass paid once through Razorpay. Cards and PayPal. No auto-renewal.');
+ assert.equal(payWith('Stripe','USD'),'A 30-day pass paid once by card through Stripe. No auto-renewal.');
+ assert.equal(payWith('Dodo Payments','USD'),'A 30-day pass paid once through Dodo Payments; local tax may be added at checkout. No auto-renewal.');
 });
