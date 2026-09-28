@@ -4,10 +4,10 @@ import Link from "next/link";
 import { ArrowRight, Check } from "lucide-react";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
-import { BillingControls, type Provider } from "./billing";
+import { BillingControls, payWith, type Provider } from "./billing";
 import { TripFooter } from "./footer";
 import { api } from "@/lib/client/api";
-export function Pricing({ signedIn, billingEnabled = false, price = "₹499", via = "Razorpay" }: { signedIn: boolean; billingEnabled?: boolean; price?: string; via?: Provider }) {
+export function Pricing({ signedIn, billingEnabled = false, price = "₹499", via = "Razorpay", currency = "INR" }: { signedIn: boolean; billingEnabled?: boolean; price?: string; via?: Provider; currency?: "INR" | "USD" }) {
   const [busy, setBusy] = useState(false);
   const [joined, setJoined] = useState(false);
   // Signing in comes back to a shared launch-code link (/pricing?code=…) with the code still on it.
@@ -61,7 +61,7 @@ export function Pricing({ signedIn, billingEnabled = false, price = "₹499", vi
                 {price} / 30 days
               </div>
               <p className="subtext">
-                20 AI plans per day. Host city-based trips with Travel Together, publish your own itinerary and approve travellers. Replace individual days, edit your itinerary, share snapshots and export a PDF. {billingEnabled ? ({ Razorpay: "A 30-day pass paid once through Razorpay. Cards and UPI. No auto-renewal.", Stripe: "A 30-day pass paid once by card through Stripe. No auto-renewal.", "Dodo Payments": "A 30-day pass paid once through Dodo Payments; local tax may be added at checkout. No auto-renewal." }[via]) : "Checkout is not open yet. No payment is collected."}
+                20 AI plans per day. Host city-based trips with Travel Together, publish your own itinerary and approve travellers. Replace individual days, edit your itinerary, share snapshots and export a PDF. {billingEnabled ? payWith(via, currency) : "Checkout is not open yet. No payment is collected."}
               </p>
               {billingEnabled ? (signedIn ? <BillingControls price={price} via={via} /> : <Link href={signIn} className="primary">Sign in for Plus</Link>) : !signedIn ? <Link href="/auth?returnTo=%2Fpricing" className="primary" style={{ marginTop: 28, width: "100%" }}>Sign in to join the Plus waitlist<ArrowRight size={15} /></Link> : <button
                 disabled={busy || joined}
