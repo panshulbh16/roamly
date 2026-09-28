@@ -15,6 +15,6 @@ jobs:
         run: |
           echo "Cloudflare sees this runner in: $(curl -sS https://heyroamly.com/cdn-cgi/trace | grep '^loc=' | cut -d= -f2)"
           page=$(curl -sS https://heyroamly.com/pricing)
-          for label in '₹499 / 30 days' '$10 / 30 days' 'through Razorpay. Cards and UPI' 'by card through Stripe' 'through Dodo Payments' 'PayPal'; do
+          for label in '₹499' '$10' 'through Razorpay. Cards and UPI' 'by card through Stripe' 'through Dodo Payments' 'PayPal'; do
             if printf '%s' "$page" | grep -qF "$label"; then echo "shown:     $label"; else echo "not shown: $label"; fi
           done
