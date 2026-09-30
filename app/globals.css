@@ -380,6 +380,9 @@ textarea {
 .input-icon input {
   padding-left: 37px;
 }
+.field:has(> .destination-suggestions) {
+  position: relative;
+}
 .destination-suggestions {
   position: absolute;
   z-index: 5;
